@@ -18,7 +18,7 @@ class QTableWidget;
 class LogWatcher;
 class TaskRunner;
 
-// 主窗口：版本表 + 存档表 + 导入/基准/去重/启动/备份操作。
+// 主窗口：版本表 + 存档表 + 导入/基准/去重/启动/复制操作。
 class MainWindow : public QMainWindow
 {
     Q_OBJECT
@@ -52,6 +52,15 @@ private:
     QString saveSourceLabel(const SaveInfo &save) const;
     // 扫描存档库，确认后给缺少时间戳后缀的存档目录改名。
     void maybeNormalizeLibraryNames();
+    // 返回游戏用户数据目录下的 GeneratedWorlds 路径。
+    QString gameWorldsRoot() const;
+    // 判断世界是否已存在于版本内置目录或游戏用户 GeneratedWorlds。
+    bool isWorldAvailable(const VersionInfo &version, const QString &world) const;
+    // 在存档库中查找指定世界的世界数据目录；找不到返回空。
+    QString findLibraryWorld(const SaveInfo &save) const;
+    // 确保存档所需世界可用；必要时提示用户选择世界目录。
+    bool ensureWorldAvailable(const SaveInfo &save, const VersionInfo &target,
+                              QString *worldSource, QString *error);
 
     void runTask(const QString &title, TaskRunner::Task task,
                  std::function<void(bool, const QString &)> onFinished);
@@ -66,12 +75,13 @@ private:
     void breakLinksSelectedVersion();
     void startSelectedGame();
     void launchSelectedVersion();
-    // 把存档库中的存档复制到游戏存档目录（先备份 C 盘同名存档）并启动。
+    // 把存档库中的存档复制到游戏存档目录并启动。
     void launchLibrarySave(const SaveInfo &save, const QString &saveRelative,
                            const VersionInfo &target);
     // 通过文件对话框选择额外扫描的存档库目录。
     void chooseSaveLibrary();
-    void backupSelectedSave();
+    // 把选中的存档复制到用户选择的目标目录。
+    void copySelectedSave();
     // 将选中的存档库存档目录移到 Windows 回收站。
     void deleteSelectedSave();
     void overrideSaveVersion();
@@ -114,7 +124,7 @@ private:
     QPushButton *m_launchVersionButton = nullptr;
 
     QPushButton *m_startButton = nullptr;
-    QPushButton *m_backupButton = nullptr;
+    QPushButton *m_copySaveButton = nullptr;
     QPushButton *m_deleteSaveButton = nullptr;
     QPushButton *m_overrideButton = nullptr;
     QPushButton *m_chooseSaveLibraryButton = nullptr;

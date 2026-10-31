@@ -27,13 +27,6 @@ bool readBool(const QJsonObject &object, const QString &key, bool fallback)
     return value.isBool() ? value.toBool() : fallback;
 }
 
-// 从 JSON 对象读取整数字段，缺省时保留原值。
-int readInt(const QJsonObject &object, const QString &key, int fallback)
-{
-    const QJsonValue value = object.value(key);
-    return value.isDouble() ? value.toInt(fallback) : fallback;
-}
-
 } // namespace
 
 AppConfig AppConfig::defaults()
@@ -79,12 +72,9 @@ AppConfig AppConfig::load(QString *error)
     config.saveLibraryRoot =
         readString(object, QStringLiteral("saveLibraryRoot"), config.saveLibraryRoot);
     config.steamRoot = readString(object, QStringLiteral("steamRoot"), config.steamRoot);
-    config.backupRoot = readString(object, QStringLiteral("backupRoot"), config.backupRoot);
     config.useNoEac = readBool(object, QStringLiteral("useNoEac"), config.useNoEac);
     config.skipIntro = readBool(object, QStringLiteral("skipIntro"), config.skipIntro);
     config.autoLoadSave = readBool(object, QStringLiteral("autoLoadSave"), config.autoLoadSave);
-    config.backupPolicy = readString(object, QStringLiteral("backupPolicy"), config.backupPolicy);
-    config.backupKeep = readInt(object, QStringLiteral("backupKeep"), config.backupKeep);
     config.extraArgs = readString(object, QStringLiteral("extraArgs"), config.extraArgs);
 
     const QJsonValue excludesValue = object.value(QStringLiteral("excludes"));
@@ -112,12 +102,9 @@ bool AppConfig::save(QString *error) const
     object.insert(QStringLiteral("savesRoot"), savesRoot);
     object.insert(QStringLiteral("saveLibraryRoot"), saveLibraryRoot);
     object.insert(QStringLiteral("steamRoot"), steamRoot);
-    object.insert(QStringLiteral("backupRoot"), backupRoot);
     object.insert(QStringLiteral("useNoEac"), useNoEac);
     object.insert(QStringLiteral("skipIntro"), skipIntro);
     object.insert(QStringLiteral("autoLoadSave"), autoLoadSave);
-    object.insert(QStringLiteral("backupPolicy"), backupPolicy);
-    object.insert(QStringLiteral("backupKeep"), backupKeep);
     object.insert(QStringLiteral("extraArgs"), extraArgs);
     object.insert(QStringLiteral("excludes"), QJsonArray::fromStringList(excludes));
 

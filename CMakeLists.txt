@@ -21,8 +21,6 @@ qt_add_executable(SevenDaysManager WIN32
     src/app/Library.h
     src/app/Library.cpp
 
-    src/core/BackupService.h
-    src/core/BackupService.cpp
     src/core/Deduper.h
     src/core/Deduper.cpp
     src/core/FileScanner.h
@@ -83,8 +81,6 @@ endif()
 
 qt_add_executable(SevenDaysDedupTests
     tests/test_dedup.cpp
-    src/core/BackupService.h
-    src/core/BackupService.cpp
     src/core/Deduper.h
     src/core/Deduper.cpp
     src/core/FileScanner.h

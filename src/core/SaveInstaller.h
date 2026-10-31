@@ -19,10 +19,11 @@ struct SaveInstallResult
 class SaveInstaller
 {
 public:
-    // 把 sourceDir 复制为 destinationDir。
+    // 把 sourceDir 复制为 destinationDir；label 用于错误和进度提示（如“存档”“世界”）。
     // 目标已存在时先移开旧目录，复制成功后再删除；失败时恢复旧目录。
     static SaveInstallResult install(
         const QString &sourceDir, const QString &destinationDir,
         const std::atomic_bool *cancel = nullptr,
-        const std::function<void(int percent, const QString &message)> &progress = {});
+        const std::function<void(int percent, const QString &message)> &progress = {},
+        const QString &label = QStringLiteral("存档"));
 };

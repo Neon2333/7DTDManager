@@ -4,7 +4,6 @@
 #include "core/PathUtils.h"
 
 #include <QCheckBox>
-#include <QComboBox>
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
@@ -17,7 +16,6 @@
 #include <QMessageBox>
 #include <QPlainTextEdit>
 #include <QPushButton>
-#include <QSpinBox>
 #include <QVBoxLayout>
 
 SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
@@ -45,9 +43,6 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
                      createPathRow(&m_steamRootEdit,
                                    QStringLiteral("选择 Steam 游戏安装目录（仅用于导入）"),
                                    config.steamRoot));
-    pathForm->addRow(QStringLiteral("备份目录："),
-                     createPathRow(&m_backupRootEdit, QStringLiteral("选择备份目录"),
-                                   config.backupRoot));
     mainLayout->addWidget(pathGroup);
 
     auto *launchGroup = new QGroupBox(QStringLiteral("启动"), this);
@@ -76,23 +71,6 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
     argsLayout->addWidget(m_extraArgsEdit, 1);
     launchLayout->addLayout(argsLayout);
     mainLayout->addWidget(launchGroup);
-
-    auto *backupGroup = new QGroupBox(QStringLiteral("备份策略"), this);
-    auto *backupForm = new QFormLayout(backupGroup);
-    m_backupPolicyCombo = new QComboBox(backupGroup);
-    m_backupPolicyCombo->addItem(QStringLiteral("仅存档版本与游戏版本不匹配时"),
-                                 QStringLiteral("mismatch"));
-    m_backupPolicyCombo->addItem(QStringLiteral("每次启动前"), QStringLiteral("always"));
-    m_backupPolicyCombo->addItem(QStringLiteral("从不备份"), QStringLiteral("never"));
-    const int policyIndex = m_backupPolicyCombo->findData(config.backupPolicy);
-    m_backupPolicyCombo->setCurrentIndex(policyIndex >= 0 ? policyIndex : 0);
-    backupForm->addRow(QStringLiteral("启动前备份："), m_backupPolicyCombo);
-
-    m_backupKeepSpin = new QSpinBox(backupGroup);
-    m_backupKeepSpin->setRange(1, 50);
-    m_backupKeepSpin->setValue(qBound(1, config.backupKeep, 50));
-    backupForm->addRow(QStringLiteral("每个存档保留份数："), m_backupKeepSpin);
-    mainLayout->addWidget(backupGroup);
 
     auto *excludeGroup = new QGroupBox(QStringLiteral("去重排除规则（每行一条）"), this);
     auto *excludeLayout = new QVBoxLayout(excludeGroup);
@@ -144,15 +122,11 @@ void SettingsDialog::accept()
     const QString saveLibraryRoot =
         QDir::toNativeSeparators(m_saveLibraryRootEdit->text().trimmed());
     const QString steamRoot = QDir::toNativeSeparators(m_steamRootEdit->text().trimmed());
-    QString backupRoot = QDir::toNativeSeparators(m_backupRootEdit->text().trimmed());
 
     if (versionRoot.isEmpty()) {
         QMessageBox::warning(this, QStringLiteral("设置"), QStringLiteral("版本汇集目录不能为空。"));
         return;
     }
-
-    if (backupRoot.isEmpty())
-        backupRoot = QDir(versionRoot).filePath(QStringLiteral("backups"));
 
     if (savesRoot.isEmpty() || !QFileInfo(savesRoot).isDir()) {
         QMessageBox::warning(this, QStringLiteral("设置"),
@@ -179,10 +153,6 @@ void SettingsDialog::accept()
         QMessageBox::warning(this, QStringLiteral("设置"), error);
         return;
     }
-    if (!PathUtils::ensureDir(backupRoot, &error)) {
-        QMessageBox::warning(this, QStringLiteral("设置"), error);
-        return;
-    }
 
     if (!PathUtils::isNtfs(versionRoot, &error)) {
         const auto answer = QMessageBox::question(
@@ -197,12 +167,9 @@ void SettingsDialog::accept()
     m_config.savesRoot = savesRoot;
     m_config.saveLibraryRoot = saveLibraryRoot;
     m_config.steamRoot = steamRoot;
-    m_config.backupRoot = backupRoot;
     m_config.useNoEac = m_noEacCheck->isChecked();
     m_config.skipIntro = m_skipIntroCheck->isChecked();
     m_config.autoLoadSave = m_autoLoadCheck->isChecked();
-    m_config.backupPolicy = m_backupPolicyCombo->currentData().toString();
-    m_config.backupKeep = m_backupKeepSpin->value();
     m_config.extraArgs = m_extraArgsEdit->text().trimmed();
 
     QStringList excludes;

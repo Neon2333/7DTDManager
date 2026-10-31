@@ -1,7 +1,6 @@
 #include "MainWindow.h"
 
 #include "SettingsDialog.h"
-#include "core/BackupService.h"
 #include "core/Deduper.h"
 #include "core/FileScanner.h"
 #include "core/GameImporter.h"
@@ -250,7 +249,7 @@ void MainWindow::setupUi()
     saveLayout->addWidget(m_saveTable, 1);
 
     m_startButton = new QPushButton(QStringLiteral("从版本开始游戏"), saveGroup);
-    m_backupButton = new QPushButton(QStringLiteral("备份存档"), saveGroup);
+    m_copySaveButton = new QPushButton(QStringLiteral("复制存档"), saveGroup);
     m_deleteSaveButton = new QPushButton(QStringLiteral("删除存档"), saveGroup);
     m_overrideButton = new QPushButton(QStringLiteral("指定版本"), saveGroup);
     m_chooseSaveLibraryButton = new QPushButton(QStringLiteral("添加存档目录"), saveGroup);
@@ -259,9 +258,10 @@ void MainWindow::setupUi()
 
     m_startButton->setToolTip(QStringLiteral(
         "使用存档匹配（或当前选中）的游戏版本启动；"
-        "选中存档库中的存档时，会先备份 C 盘旧存档，再复制该存档到游戏存档目录。"));
-    m_backupButton->setToolTip(QStringLiteral(
-        "按备份策略把选中存档复制到备份目录，并清理超过保留份数的旧备份。"));
+        "选中存档库中的存档时，会把它复制到游戏存档目录并直接覆盖同名存档。"));
+    m_copySaveButton->setToolTip(QStringLiteral(
+        "把选中的存档复制到指定目录，保留 <世界>/<存档> 结构；"
+        "目标重名时自动追加时间戳，不覆盖已有存档。"));
     m_deleteSaveButton->setToolTip(QStringLiteral(
         "将选中的存档库存档目录移到 Windows 回收站，可从回收站恢复。"));
     m_overrideButton->setToolTip(QStringLiteral(
@@ -285,7 +285,7 @@ void MainWindow::setupUi()
 
     auto *saveButtons = new QHBoxLayout();
     for (QPushButton *button :
-         {m_backupButton, m_deleteSaveButton, m_overrideButton, m_chooseSaveLibraryButton,
+         {m_copySaveButton, m_deleteSaveButton, m_overrideButton, m_chooseSaveLibraryButton,
           m_openSaveButton, m_refreshButton}) {
         button->setAutoDefault(false);
         saveButtons->addWidget(button);
@@ -349,7 +349,7 @@ void MainWindow::setupUi()
             &MainWindow::launchSelectedVersion);
 
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::startSelectedGame);
-    connect(m_backupButton, &QPushButton::clicked, this, &MainWindow::backupSelectedSave);
+    connect(m_copySaveButton, &QPushButton::clicked, this, &MainWindow::copySelectedSave);
     connect(m_deleteSaveButton, &QPushButton::clicked, this, &MainWindow::deleteSelectedSave);
     connect(m_overrideButton, &QPushButton::clicked, this, &MainWindow::overrideSaveVersion);
     connect(m_chooseSaveLibraryButton, &QPushButton::clicked, this,
@@ -518,7 +518,7 @@ void MainWindow::refreshSaveTable(const QString &selectKey)
         saves += scan.saves;
     };
 
-    // 存档表只展示存档库；C 盘游戏存档目录仅作为启动时的复制/备份目标。
+    // 存档表只展示存档库；C 盘游戏存档目录仅作为启动时的复制目标。
     const QString libraryRoot = QDir::cleanPath(m_config.saveLibraryRoot);
     const QString savesRoot = QDir::cleanPath(m_config.savesRoot);
     if (!m_config.saveLibraryRoot.isEmpty()
@@ -770,7 +770,7 @@ void MainWindow::updateActionStates()
     m_launchVersionButton->setEnabled(!busy && selected && selected->exists);
 
     m_startButton->setEnabled(!busy && (hasSave || (selected && selected->exists)));
-    m_backupButton->setEnabled(!busy && hasSave);
+    m_copySaveButton->setEnabled(!busy && hasSave);
     m_deleteSaveButton->setEnabled(!busy && canDeleteSave);
     m_overrideButton->setEnabled(!busy && hasSave && !m_library.versions.isEmpty());
     m_chooseSaveLibraryButton->setEnabled(!busy);
@@ -858,6 +858,152 @@ bool MainWindow::isLibrarySave(const SaveInfo &save) const
 QString MainWindow::saveSourceLabel(const SaveInfo &save) const
 {
     return isLibrarySave(save) ? QStringLiteral("存档库") : QStringLiteral("游戏存档");
+}
+
+QString MainWindow::gameWorldsRoot() const
+{
+    if (m_config.savesRoot.trimmed().isEmpty())
+        return QString();
+    const QString parent = QFileInfo(m_config.savesRoot).absolutePath();
+    return QDir::cleanPath(QDir(parent).filePath(QStringLiteral("GeneratedWorlds")));
+}
+
+bool MainWindow::isWorldAvailable(const VersionInfo &version, const QString &world) const
+{
+    if (world.isEmpty())
+        return false;
+
+    const QString builtIn = QDir(version.path).filePath(
+        QStringLiteral("Data/Worlds/%1/main.ttw").arg(world));
+    if (QFileInfo(builtIn).isFile())
+        return true;
+
+    const QString worldsRoot = gameWorldsRoot();
+    if (worldsRoot.isEmpty())
+        return false;
+    const QString userWorld = QDir(worldsRoot).filePath(
+        QStringLiteral("%1/main.ttw").arg(world));
+    return QFileInfo(userWorld).isFile();
+}
+
+QString MainWindow::findLibraryWorld(const SaveInfo &save) const
+{
+    if (save.world.isEmpty())
+        return QString();
+
+    QStringList roots;
+    const auto addRoot = [&roots](const QString &base) {
+        if (base.trimmed().isEmpty())
+            return;
+        const QString clean = QDir::cleanPath(base);
+        if (!clean.isEmpty() && !roots.contains(clean))
+            roots.append(clean);
+    };
+
+    if (!save.sourceRoot.isEmpty()) {
+        addRoot(QDir(save.sourceRoot).filePath(QStringLiteral("GeneratedWorlds")));
+        addRoot(QDir(QFileInfo(save.sourceRoot).absolutePath())
+                    .filePath(QStringLiteral("GeneratedWorlds")));
+    }
+    if (!m_config.saveLibraryRoot.isEmpty()) {
+        addRoot(QDir(m_config.saveLibraryRoot).filePath(QStringLiteral("GeneratedWorlds")));
+        addRoot(QDir(QFileInfo(m_config.saveLibraryRoot).absolutePath())
+                    .filePath(QStringLiteral("GeneratedWorlds")));
+    }
+    if (!m_config.versionRoot.isEmpty())
+        addRoot(QDir(m_config.versionRoot).filePath(QStringLiteral("GeneratedWorlds")));
+
+    for (const QString &root : roots) {
+        const QString candidate = QDir(root).filePath(save.world);
+        if (QFileInfo(QDir(candidate).filePath(QStringLiteral("main.ttw"))).isFile())
+            return QDir::toNativeSeparators(candidate);
+    }
+    return QString();
+}
+
+bool MainWindow::ensureWorldAvailable(const SaveInfo &save, const VersionInfo &target,
+                                      QString *worldSource, QString *error)
+{
+    if (worldSource)
+        worldSource->clear();
+    if (save.world.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("无法确定存档所在世界。");
+        return false;
+    }
+
+    if (isWorldAvailable(target, save.world))
+        return true;
+
+    const QString libraryWorld = findLibraryWorld(save);
+    if (!libraryWorld.isEmpty()) {
+        if (worldSource)
+            *worldSource = libraryWorld;
+        return true;
+    }
+
+    const QString builtIn = QDir(target.path).filePath(
+        QStringLiteral("Data/Worlds/%1").arg(save.world));
+    const QString userWorld = QDir(gameWorldsRoot()).filePath(save.world);
+    const QString suggested = !save.sourceRoot.isEmpty()
+                                  ? QDir(save.sourceRoot)
+                                        .filePath(QStringLiteral("GeneratedWorlds/%1")
+                                                      .arg(save.world))
+                                  : QDir(m_config.saveLibraryRoot)
+                                        .filePath(QStringLiteral("GeneratedWorlds/%1")
+                                                      .arg(save.world));
+
+    QMessageBox box(
+        QMessageBox::Warning, QStringLiteral("缺少世界数据"),
+        QStringLiteral("存档所在世界“%1”不存在。\n\n"
+                       "游戏会在以下位置查找世界：\n"
+                       "· 内置世界：%2\n"
+                       "· 用户世界：%3\n\n"
+                       "自定义世界还需要 GeneratedWorlds 世界数据。\n"
+                       "建议把世界目录放到存档库：\n%4\n\n"
+                       "也可以临时选择一个包含 main.ttw 的世界目录。")
+            .arg(save.world, QDir::toNativeSeparators(builtIn),
+                 QDir::toNativeSeparators(userWorld),
+                 QDir::toNativeSeparators(suggested)),
+        QMessageBox::NoButton, this);
+    QPushButton *chooseButton =
+        box.addButton(QStringLiteral("选择世界目录..."), QMessageBox::ActionRole);
+    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() != chooseButton) {
+        if (error)
+            *error = QStringLiteral("已取消");
+        return false;
+    }
+
+    const QString initial = !save.sourceRoot.isEmpty()
+                                ? QDir(save.sourceRoot)
+                                      .filePath(QStringLiteral("GeneratedWorlds"))
+                                : m_config.saveLibraryRoot;
+    const QString selected = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择世界目录（包含 main.ttw）"), initial);
+    if (selected.isEmpty()) {
+        if (error)
+            *error = QStringLiteral("已取消");
+        return false;
+    }
+
+    QString source = selected;
+    if (!QFileInfo(QDir(source).filePath(QStringLiteral("main.ttw"))).isFile()) {
+        const QString nested = QDir(source).filePath(save.world);
+        if (QFileInfo(QDir(nested).filePath(QStringLiteral("main.ttw"))).isFile())
+            source = nested;
+    }
+    if (!QFileInfo(QDir(source).filePath(QStringLiteral("main.ttw"))).isFile()) {
+        if (error)
+            *error = QStringLiteral("所选目录不是有效的世界目录（缺少 main.ttw）：%1")
+                         .arg(selected);
+        return false;
+    }
+
+    if (worldSource)
+        *worldSource = QDir::toNativeSeparators(source);
+    return true;
 }
 
 QString MainWindow::versionDisplayName(const VersionInfo &version)
@@ -1737,7 +1883,8 @@ void MainWindow::startSelectedGame()
 
     if (mismatch) {
         QString text = QStringLiteral("存档：%1\n存档最后保存版本：%2\n所选游戏版本：%3\n\n"
-                                      "版本不一致可能导致存档无法加载或损坏。")
+                                      "版本不一致可能导致存档无法加载或损坏。\n"
+                                      "继续启动不会自动备份该存档。")
                            .arg(save.displayName(),
                                 save.lastSavedVersion.isEmpty() ? QStringLiteral("无法识别")
                                                                 : save.lastSavedVersion,
@@ -1749,19 +1896,12 @@ void MainWindow::startSelectedGame()
 
         QMessageBox box(QMessageBox::Warning, QStringLiteral("版本不匹配"), text,
                         QMessageBox::NoButton, this);
-        QPushButton *force = box.addButton(QStringLiteral("备份并强制启动"),
+        QPushButton *force = box.addButton(QStringLiteral("仍然强制启动"),
                                            QMessageBox::DestructiveRole);
         box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
         box.exec();
         if (box.clickedButton() != force)
             return;
-
-        if (!librarySave && m_config.backupPolicy == QStringLiteral("never")) {
-            showError(QStringLiteral("无法强制启动"),
-                      QStringLiteral("当前备份策略为“从不备份”。强制跨版本启动必须先备份，"
-                                     "请先在设置中修改备份策略。"));
-            return;
-        }
     }
 
     const VersionInfo targetCopy = *target;
@@ -1776,118 +1916,77 @@ void MainWindow::startSelectedGame()
         return;
     }
 
-    bool needBackup = false;
-    if (hasSave) {
-        if (m_config.backupPolicy == QStringLiteral("always"))
-            needBackup = true;
-        else if (m_config.backupPolicy == QStringLiteral("mismatch") && mismatch)
-            needBackup = true;
-    }
-
-    if (!needBackup) {
-        launchVerified(targetCopy, saveRelative);
-        return;
-    }
-
-    const QString backupRoot = m_config.backupRoot;
-    const int keep = m_config.backupKeep;
-    auto result = std::make_shared<BackupResult>();
-
-    runTask(
-        QStringLiteral("启动前备份存档"),
-        [result, save, backupRoot, targetCopy](TaskContext &context) {
-            *result = BackupService::backupSave(
-                save.directory, backupRoot, save.world, save.saveName, targetCopy.label,
-                context.cancelFlag(),
-                [&context](int percent, const QString &message) {
-                    context.report(percent, message);
-                });
-            if (!result->ok && !result->canceled)
-                context.fail(result->error);
-        },
-        [this, result, save, backupRoot, keep, targetCopy, saveRelative](bool ok,
-                                                                        const QString &message) {
-            if (!ok) {
-                if (message != QStringLiteral("已取消"))
-                    showError(QStringLiteral("备份失败"),
-                              QStringLiteral("%1\n\n已取消启动。").arg(message));
-                return;
-            }
-
-            BackupService::pruneBackups(backupRoot, save.world, save.saveName, keep);
-            statusBar()->showMessage(
-                QStringLiteral("已备份到：%1").arg(result->path), 8000);
-            launchVerified(targetCopy, saveRelative);
-        });
+    launchVerified(targetCopy, saveRelative);
 }
 
 void MainWindow::launchLibrarySave(const SaveInfo &save, const QString &saveRelative,
                                    const VersionInfo &target)
 {
+    QString worldSource;
+    QString worldError;
+    if (!ensureWorldAvailable(save, target, &worldSource, &worldError)) {
+        if (worldError != QStringLiteral("已取消"))
+            showError(QStringLiteral("缺少世界数据"), worldError);
+        return;
+    }
+
+    const QString worldsRoot = gameWorldsRoot();
+    if (!worldSource.isEmpty() && worldsRoot.isEmpty()) {
+        showError(QStringLiteral("缺少世界数据"),
+                  QStringLiteral("未设置游戏存档目录，无法复制世界数据。"));
+        return;
+    }
+    const QString worldDestination = QDir(worldsRoot).filePath(save.world);
+
     const QString baseSaveName = SaveScanner::stripTimestampSuffix(save.saveName);
     const QString destination =
         QDir(m_config.savesRoot).filePath(save.world + QLatin1Char('/') + baseSaveName);
-    // 存档可能来自 <存档库>\<版本>\Saves，备份也写回该实际 Saves 目录。
-    const QString libraryRoot =
-        save.sourceRoot.isEmpty() ? m_config.saveLibraryRoot : save.sourceRoot;
-    const QString libraryWorldDir = QDir(libraryRoot).filePath(save.world);
 
     auto result = std::make_shared<SaveInstallResult>();
-    auto backupPath = std::make_shared<QString>();
 
     runTask(
         QStringLiteral("准备存档并启动"),
-        [result, backupPath, save, destination, libraryWorldDir](TaskContext &context) {
-            const bool targetExists = PathUtils::isDirectory(destination);
+        [result, save, destination, worldSource, worldDestination](TaskContext &context) {
+            int progressBase = 0;
 
-            // C 盘已有同名存档时，先把它保存回存档库，避免覆盖后丢失上次游玩记录。
-            if (targetExists) {
-                QString error;
-                if (!PathUtils::ensureDir(libraryWorldDir, &error)) {
-                    context.fail(error);
-                    return;
-                }
-                const QStringList existing = QDir(libraryWorldDir)
-                                                 .entryList(QDir::Dirs | QDir::NoDotAndDotDot);
-                const QString baseName = SaveScanner::stripTimestampSuffix(save.saveName);
-                const QString backupName = SaveScanner::timestampedName(
-                    baseName, QDateTime::currentDateTime(), existing);
-                *backupPath = QDir(libraryWorldDir).filePath(backupName);
-
-                const SaveInstallResult backup = SaveInstaller::install(
-                    destination, *backupPath, context.cancelFlag(),
+            // 自定义世界必须先复制到游戏用户目录，游戏才能按 -GameWorld 找到世界定义。
+            const QString worldTtw =
+                QFileInfo(QDir(worldDestination).filePath(QStringLiteral("main.ttw"))).isFile()
+                    ? QString()
+                    : worldSource;
+            if (!worldTtw.isEmpty()) {
+                const SaveInstallResult world = SaveInstaller::install(
+                    worldTtw, worldDestination, context.cancelFlag(),
                     [&context](int percent, const QString &message) {
-                        context.report(percent * 40 / 100,
-                                       QStringLiteral("备份 C 盘存档：%1").arg(message));
-                    });
-                if (!backup.ok) {
-                    if (!backup.canceled)
-                        context.fail(backup.error);
+                        context.report(percent * 15 / 100, message);
+                    },
+                    QStringLiteral("世界"));
+                if (!world.ok) {
+                    if (!world.canceled)
+                        context.fail(world.error);
                     return;
                 }
+                progressBase = 15;
             }
 
             *result = SaveInstaller::install(
                 save.directory, destination, context.cancelFlag(),
-                [&context, targetExists](int percent, const QString &message) {
-                    const int mapped = targetExists ? 40 + percent * 60 / 100 : percent;
+                [&context, progressBase](int percent, const QString &message) {
+                    const int mapped =
+                        progressBase + percent * (100 - progressBase) / 100;
                     context.report(mapped,
                                    QStringLiteral("复制到游戏存档目录：%1").arg(message));
                 });
             if (!result->ok && !result->canceled)
                 context.fail(result->error);
         },
-        [this, target, saveRelative, backupPath](bool ok, const QString &message) {
+        [this, target, saveRelative](bool ok, const QString &message) {
             if (!ok) {
                 if (message != QStringLiteral("已取消"))
                     showError(QStringLiteral("准备存档失败"), message);
                 return;
             }
 
-            if (!backupPath->isEmpty()) {
-                statusBar()->showMessage(
-                    QStringLiteral("C 盘原存档已保存到存档库：%1").arg(*backupPath), 10000);
-            }
             refreshSaveTable();
             launchVerified(target, saveRelative);
         });
@@ -1961,45 +2060,63 @@ void MainWindow::handleUserDataFolder(const QString &path)
             .arg(actualSaves, configured));
 }
 
-void MainWindow::backupSelectedSave()
+void MainWindow::copySelectedSave()
 {
     const int row = selectedSaveRow();
     if (row < 0)
         return;
 
     const SaveInfo save = m_saves.at(row);
-    const VersionInfo *version = versionForSave(save, nullptr);
-    const QString versionText = version ? versionDisplayName(*version)
-                                        : save.lastSavedVersion;
+    const QString initial = !save.sourceRoot.isEmpty() ? save.sourceRoot
+                                                       : m_config.saveLibraryRoot;
+    const QString targetRoot = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择复制目标目录"), initial, QFileDialog::ShowDirsOnly);
+    if (targetRoot.isEmpty())
+        return;
 
-    const QString backupRoot = m_config.backupRoot;
-    const int keep = m_config.backupKeep;
-    auto result = std::make_shared<BackupResult>();
+    const QString worldDir = QDir(targetRoot).filePath(save.world);
+    QString destinationName = save.saveName;
+    if (QFileInfo::exists(QDir(worldDir).filePath(destinationName))) {
+        const QStringList existing =
+            QDir(worldDir).entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+        destinationName = SaveScanner::timestampedName(
+            save.saveName, QDateTime::currentDateTime(), existing);
+    }
+    const QString destination = QDir(worldDir).filePath(destinationName);
 
+    // 防止把存档复制到自身或其子目录，避免递归复制。
+    const QString source = QDir::cleanPath(save.directory);
+    const QString destinationClean = QDir::cleanPath(destination);
+    if (destinationClean.compare(source, Qt::CaseInsensitive) == 0
+        || destinationClean.startsWith(source + QLatin1Char('/'), Qt::CaseInsensitive)) {
+        showError(QStringLiteral("复制存档"),
+                  QStringLiteral("目标目录不能是存档自身或其子目录：\n%1")
+                      .arg(QDir::toNativeSeparators(destination)));
+        return;
+    }
+
+    auto result = std::make_shared<SaveInstallResult>();
     runTask(
-        QStringLiteral("备份存档"),
-        [result, save, backupRoot, versionText](TaskContext &context) {
-            *result = BackupService::backupSave(
-                save.directory, backupRoot, save.world, save.saveName, versionText,
-                context.cancelFlag(),
+        QStringLiteral("复制存档"),
+        [result, save, destination](TaskContext &context) {
+            *result = SaveInstaller::install(
+                save.directory, destination, context.cancelFlag(),
                 [&context](int percent, const QString &message) {
                     context.report(percent, message);
                 });
             if (!result->ok && !result->canceled)
                 context.fail(result->error);
         },
-        [this, result, save, backupRoot, keep](bool ok, const QString &message) {
+        [this, destination](bool ok, const QString &message) {
             if (!ok) {
                 if (message != QStringLiteral("已取消"))
-                    showError(QStringLiteral("备份失败"), message);
+                    showError(QStringLiteral("复制存档失败"), message);
                 return;
             }
-            const int pruned = BackupService::pruneBackups(backupRoot, save.world,
-                                                           save.saveName, keep);
-            showInfo(QStringLiteral("备份完成"),
-                     QStringLiteral("已备份到：\n%1\n\n清理旧备份：%2 份")
-                         .arg(result->path)
-                         .arg(pruned));
+            refreshSaveTable();
+            showInfo(QStringLiteral("复制存档"),
+                     QStringLiteral("已复制到：\n%1")
+                         .arg(QDir::toNativeSeparators(destination)));
         });
 }
 

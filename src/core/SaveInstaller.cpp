@@ -29,17 +29,18 @@ QString uniqueSiblingPath(const QString &parentDir, const QString &name,
 SaveInstallResult SaveInstaller::install(
     const QString &sourceDir, const QString &destinationDir,
     const std::atomic_bool *cancel,
-    const std::function<void(int percent, const QString &message)> &progress)
+    const std::function<void(int percent, const QString &message)> &progress,
+    const QString &label)
 {
     SaveInstallResult result;
 
     if (!PathUtils::isDirectory(sourceDir)) {
-        result.error = QStringLiteral("源存档目录不存在：%1").arg(sourceDir);
+        result.error = QStringLiteral("源%1目录不存在：%2").arg(label, sourceDir);
         return result;
     }
     if (!QFileInfo(QDir(sourceDir).filePath(QStringLiteral("main.ttw"))).isFile()) {
-        result.error = QStringLiteral("源目录不是有效存档（缺少 main.ttw）：%1")
-                           .arg(sourceDir);
+        result.error = QStringLiteral("源目录不是有效%1（缺少 main.ttw）：%2")
+                           .arg(label, sourceDir);
         return result;
     }
     if (QFileInfo::exists(destinationDir) && !PathUtils::isDirectory(destinationDir)) {
@@ -59,7 +60,7 @@ SaveInstallResult SaveInstaller::install(
         totalBytes += size;
     }
     if (files.isEmpty()) {
-        result.error = QStringLiteral("源存档目录为空：%1").arg(sourceDir);
+        result.error = QStringLiteral("源%1目录为空：%2").arg(label, sourceDir);
         return result;
     }
 
@@ -106,7 +107,10 @@ SaveInstallResult SaveInstaller::install(
         if (progress) {
             const int percent =
                 totalBytes > 0 ? static_cast<int>(copiedBytes * 100 / totalBytes) : 100;
-            progress(percent, QStringLiteral("复制存档 %1/%2").arg(copiedFiles).arg(files.size()));
+            progress(percent, QStringLiteral("复制%1 %2/%3")
+                                  .arg(label)
+                                  .arg(copiedFiles)
+                                  .arg(files.size()));
         }
     }
 
@@ -117,7 +121,7 @@ SaveInstallResult SaveInstaller::install(
         replacedDir =
             uniqueSiblingPath(parentDir, destinationName, QStringLiteral("replaced"));
         if (!QDir().rename(destinationDir, replacedDir)) {
-            result.error = QStringLiteral("无法替换目标存档：%1").arg(destinationDir);
+            result.error = QStringLiteral("无法替换目标%1：%2").arg(label, destinationDir);
             QDir(stagingDir).removeRecursively();
             return result;
         }
@@ -127,7 +131,7 @@ SaveInstallResult SaveInstaller::install(
         if (destinationExists)
             QDir().rename(replacedDir, destinationDir);
         QDir(stagingDir).removeRecursively();
-        result.error = QStringLiteral("无法写入目标存档：%1").arg(destinationDir);
+        result.error = QStringLiteral("无法写入目标%1：%2").arg(label, destinationDir);
         return result;
     }
 

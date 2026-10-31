@@ -1,4 +1,3 @@
-#include "core/BackupService.h"
 #include "core/Deduper.h"
 #include "core/FileScanner.h"
 #include "core/HardLink.h"
@@ -141,17 +140,6 @@ int main(int argc, char *argv[])
     const UsageStats usageAfter =
         Deduper::calculateUsage({baseDir, sourceDir}, nullptr, {});
     check(usageAfter.physicalBytes == usageAfter.logicalBytes, "解除链接后物理占用等于逻辑大小");
-
-    const QString backupRoot = QDir(root).filePath(QStringLiteral("backups"));
-    const BackupResult backup = BackupService::backupSave(sourceDir, backupRoot,
-                                                          QStringLiteral("World"),
-                                                          QStringLiteral("Save"),
-                                                          QStringLiteral("V1.4"), nullptr, {});
-    check(backup.ok, QStringLiteral("备份成功：%1").arg(backup.error));
-    check(QFileInfo::exists(QDir(backup.path).filePath(QStringLiteral("backup.json"))),
-          "备份元数据存在");
-    check(QFileInfo::exists(QDir(backup.path).filePath(QStringLiteral("same.dat"))),
-          "备份包含存档文件");
 
     out << (failures == 0 ? "ALL PASS\n" : QStringLiteral("FAILURES=%1\n").arg(failures));
     return failures == 0 ? 0 : 1;

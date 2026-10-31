@@ -11,15 +11,10 @@ public:
     QString savesRoot;       // 游戏存档目录（启动时复制目标）
     QString saveLibraryRoot; // 存档库目录（额外扫描的外部存档目录，可为空）
     QString steamRoot;       // Steam 安装目录（仅导入用）
-    QString backupRoot;      // 备份目录
 
     bool useNoEac = true;        // 启动时加 -noeac
     bool skipIntro = false;      // 启动时加 -skipintro
     bool autoLoadSave = true;    // -LoadSaveGame=true + -GameWorld/-GameName
-
-    // 备份策略："mismatch"（版本不匹配时）、"always"（每次启动前）、"never"。
-    QString backupPolicy = QStringLiteral("mismatch");
-    int backupKeep = 5;
 
     QString extraArgs;           // 附加启动参数
     QStringList excludes;        // 去重排除规则

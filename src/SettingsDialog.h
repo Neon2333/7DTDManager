@@ -5,12 +5,10 @@
 #include <QDialog>
 
 class QCheckBox;
-class QComboBox;
 class QLineEdit;
 class QPlainTextEdit;
-class QSpinBox;
 
-// 设置对话框：路径、启动参数、备份策略与去重排除规则。
+// 设置对话框：路径、启动参数与去重排除规则。
 class SettingsDialog : public QDialog
 {
     Q_OBJECT
@@ -35,12 +33,9 @@ private:
     QLineEdit *m_savesRootEdit = nullptr;
     QLineEdit *m_saveLibraryRootEdit = nullptr;
     QLineEdit *m_steamRootEdit = nullptr;
-    QLineEdit *m_backupRootEdit = nullptr;
     QCheckBox *m_noEacCheck = nullptr;
     QCheckBox *m_skipIntroCheck = nullptr;
     QCheckBox *m_autoLoadCheck = nullptr;
-    QComboBox *m_backupPolicyCombo = nullptr;
-    QSpinBox *m_backupKeepSpin = nullptr;
     QLineEdit *m_extraArgsEdit = nullptr;
     QPlainTextEdit *m_excludesEdit = nullptr;
 };
