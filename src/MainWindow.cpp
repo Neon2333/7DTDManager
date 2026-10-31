@@ -15,6 +15,7 @@
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QCoreApplication>
 #include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
@@ -378,6 +379,15 @@ void MainWindow::setupMenus()
     connect(openVersionAction, &QAction::triggered, this, &MainWindow::openVersionRoot);
     QAction *openSavesAction = toolsMenu->addAction(QStringLiteral("打开存档目录"));
     connect(openSavesAction, &QAction::triggered, this, &MainWindow::openSavesRoot);
+
+    QMenu *helpMenu = menuBar()->addMenu(QStringLiteral("帮助"));
+    QAction *aboutAction = helpMenu->addAction(QStringLiteral("关于"));
+    connect(aboutAction, &QAction::triggered, this, [this] {
+        QMessageBox::about(
+            this, QStringLiteral("关于"),
+            QStringLiteral("七日杀多版本与存档管理\n\n版本：%1\n开发者：WK&AYU")
+                .arg(QCoreApplication::applicationVersion()));
+    });
 }
 
 void MainWindow::loadState()
