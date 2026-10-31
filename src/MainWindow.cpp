@@ -405,13 +405,11 @@ void MainWindow::refreshAll()
     m_rootLabel->setText(QStringLiteral("版本根：%1")
                              .arg(m_config.versionRoot.isEmpty() ? QStringLiteral("未设置")
                                                                 : m_config.versionRoot));
-    QString savesText =
-        QStringLiteral("游戏存档：%1")
-            .arg(m_config.savesRoot.isEmpty() ? QStringLiteral("未设置")
-                                              : m_config.savesRoot);
-    if (!m_config.saveLibraryRoot.isEmpty())
-        savesText += QStringLiteral("；存档库：%1").arg(m_config.saveLibraryRoot);
-    savesText += QStringLiteral("（共 %1 个存档）").arg(m_saves.size());
+    const QString savesText =
+        QStringLiteral("存档库：%1（共 %2 个存档）")
+            .arg(m_config.saveLibraryRoot.isEmpty() ? QStringLiteral("未设置")
+                                                    : m_config.saveLibraryRoot)
+            .arg(m_saves.size());
     m_savesLabel->setText(savesText);
 }
 
@@ -505,12 +503,23 @@ void MainWindow::refreshSaveTable(const QString &selectKey)
         saves += scan.saves;
     };
 
-    scanRoot(m_config.savesRoot);
+    // 存档表只展示存档库；C 盘游戏存档目录仅作为启动时的复制/备份目标。
     const QString libraryRoot = QDir::cleanPath(m_config.saveLibraryRoot);
+    const QString savesRoot = QDir::cleanPath(m_config.savesRoot);
     if (!m_config.saveLibraryRoot.isEmpty()
-        && libraryRoot.compare(QDir::cleanPath(m_config.savesRoot), Qt::CaseInsensitive) != 0) {
+        && libraryRoot.compare(savesRoot, Qt::CaseInsensitive) != 0) {
         for (const QString &root : SaveScanner::discoverSavesRoots(m_config.saveLibraryRoot))
             scanRoot(root);
+    }
+
+    // 存档库可能包含或指向 C 盘游戏存档目录，剔除其中所有游戏运行时存档。
+    if (!savesRoot.isEmpty()) {
+        const auto isGameRuntimeSave = [&savesRoot](const SaveInfo &save) {
+            const QString directory = QDir::cleanPath(save.directory);
+            return directory.compare(savesRoot, Qt::CaseInsensitive) == 0
+                   || directory.startsWith(savesRoot + QLatin1Char('/'), Qt::CaseInsensitive);
+        };
+        saves.erase(std::remove_if(saves.begin(), saves.end(), isGameRuntimeSave), saves.end());
     }
 
     std::stable_sort(saves.begin(), saves.end(), [](const SaveInfo &a, const SaveInfo &b) {
@@ -595,6 +604,17 @@ void MainWindow::maybeNormalizeLibraryNames()
     QVector<SaveRenamePlan> plans;
     for (const QString &root : SaveScanner::discoverSavesRoots(m_config.saveLibraryRoot))
         plans += SaveScanner::planTimestampRenames(root);
+
+    // 存档库可能是 C 盘游戏存档目录的父目录，不能重命名其中的运行时存档。
+    const QString savesRoot = QDir::cleanPath(m_config.savesRoot);
+    if (!savesRoot.isEmpty()) {
+        const auto isGameRuntimeSave = [&savesRoot](const SaveRenamePlan &plan) {
+            const QString path = QDir::cleanPath(plan.fromPath);
+            return path.compare(savesRoot, Qt::CaseInsensitive) == 0
+                   || path.startsWith(savesRoot + QLatin1Char('/'), Qt::CaseInsensitive);
+        };
+        plans.erase(std::remove_if(plans.begin(), plans.end(), isGameRuntimeSave), plans.end());
+    }
     if (plans.isEmpty())
         return;
 
