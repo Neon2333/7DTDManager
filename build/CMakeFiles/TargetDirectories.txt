@@ -1,0 +1,6 @@
+E:/WorkSpace/Coding/7days/build/CMakeFiles/SevenDaysManager.dir
+E:/WorkSpace/Coding/7days/build/CMakeFiles/SevenDaysCoreTests.dir
+E:/WorkSpace/Coding/7days/build/CMakeFiles/SevenDaysDedupTests.dir
+E:/WorkSpace/Coding/7days/build/CMakeFiles/SevenDaysLogTests.dir
+E:/WorkSpace/Coding/7days/build/CMakeFiles/ALL_BUILD.dir
+E:/WorkSpace/Coding/7days/build/CMakeFiles/ZERO_CHECK.dir

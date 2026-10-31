@@ -1,0 +1,8 @@
+E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests_autogen\mocs_compilation_Debug.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\mocs_compilation_Debug.obj
+E:\WorkSpace\Coding\7days\tests\test_dedup.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\test_dedup.obj
+E:\WorkSpace\Coding\7days\src\core\BackupService.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\BackupService.obj
+E:\WorkSpace\Coding\7days\src\core\Deduper.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\Deduper.obj
+E:\WorkSpace\Coding\7days\src\core\FileScanner.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\FileScanner.obj
+E:\WorkSpace\Coding\7days\src\core\HardLink.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\HardLink.obj
+E:\WorkSpace\Coding\7days\src\core\HashService.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\HashService.obj
+E:\WorkSpace\Coding\7days\src\core\PathUtils.cpp;E:\WorkSpace\Coding\7days\build\SevenDaysDedupTests.dir\Debug\PathUtils.obj

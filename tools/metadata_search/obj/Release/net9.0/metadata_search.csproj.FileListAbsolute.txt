@@ -1,0 +1,14 @@
+E:\WorkSpace\Coding\7days\tools\metadata_search\bin\Release\net9.0\metadata_search.exe
+E:\WorkSpace\Coding\7days\tools\metadata_search\bin\Release\net9.0\metadata_search.deps.json
+E:\WorkSpace\Coding\7days\tools\metadata_search\bin\Release\net9.0\metadata_search.runtimeconfig.json
+E:\WorkSpace\Coding\7days\tools\metadata_search\bin\Release\net9.0\metadata_search.dll
+E:\WorkSpace\Coding\7days\tools\metadata_search\bin\Release\net9.0\metadata_search.pdb
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.GeneratedMSBuildEditorConfig.editorconfig
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.AssemblyInfoInputs.cache
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.AssemblyInfo.cs
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.csproj.CoreCompileInputs.cache
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.dll
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\refint\metadata_search.dll
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.pdb
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\metadata_search.genruntimeconfig.cache
+E:\WorkSpace\Coding\7days\tools\metadata_search\obj\Release\net9.0\ref\metadata_search.dll
