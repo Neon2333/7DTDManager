@@ -32,6 +32,10 @@ Library Library::load(const QString &versionRoot, QString *error)
     Library library;
     library.versionRoot = QDir::toNativeSeparators(versionRoot);
 
+    // 版本根为空时不能把 library.json 当成当前工作目录下的相对文件加载。
+    if (versionRoot.trimmed().isEmpty())
+        return library;
+
     const QString path = libraryPath(versionRoot);
     QFile file(path);
     if (!file.exists())

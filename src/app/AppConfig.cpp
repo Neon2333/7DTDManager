@@ -10,34 +10,8 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QSaveFile>
-#include <QStandardPaths>
 
 namespace {
-
-// 在常见位置中探测 Steam 游戏安装目录。
-QString detectSteamRoot()
-{
-    const QStringList candidates = {
-        QStringLiteral("G:\\Steam\\steamapps\\common\\7 Days To Die"),
-        QStringLiteral("C:\\Program Files (x86)\\Steam\\steamapps\\common\\7 Days To Die"),
-        QStringLiteral("D:\\Steam\\steamapps\\common\\7 Days To Die"),
-    };
-    for (const QString &candidate : candidates) {
-        if (PathUtils::isCompleteGameDir(candidate))
-            return QDir::toNativeSeparators(candidate);
-    }
-    return QString();
-}
-
-// 探测默认版本汇集目录：优先 G:\7DTD_versions，否则用户文档目录。
-QString detectVersionRoot()
-{
-    if (QFileInfo(QStringLiteral("G:\\")).isDir())
-        return QStringLiteral("G:\\7DTD_versions");
-
-    const QString documents = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
-    return QDir::toNativeSeparators(QDir(documents).filePath(QStringLiteral("7DTD_versions")));
-}
 
 // 从 JSON 对象读取字符串字段，缺省时保留原值。
 QString readString(const QJsonObject &object, const QString &key, const QString &fallback)
@@ -65,11 +39,7 @@ int readInt(const QJsonObject &object, const QString &key, int fallback)
 AppConfig AppConfig::defaults()
 {
     AppConfig config;
-    config.versionRoot = detectVersionRoot();
-    config.savesRoot = PathUtils::defaultSavesDir();
-    config.steamRoot = detectSteamRoot();
-    config.backupRoot = QDir::toNativeSeparators(
-        QDir(config.versionRoot).filePath(QStringLiteral("backups")));
+    // 首次运行不预设任何本机路径，避免把开发/测试环境的目录带入安装包。
     config.excludes = FileScanner::defaultExcludes();
     return config;
 }
