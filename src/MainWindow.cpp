@@ -20,6 +20,7 @@
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
+#include <QFile>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QFont>
@@ -250,6 +251,7 @@ void MainWindow::setupUi()
 
     m_startButton = new QPushButton(QStringLiteral("从版本开始游戏"), saveGroup);
     m_backupButton = new QPushButton(QStringLiteral("备份存档"), saveGroup);
+    m_deleteSaveButton = new QPushButton(QStringLiteral("删除存档"), saveGroup);
     m_overrideButton = new QPushButton(QStringLiteral("指定版本"), saveGroup);
     m_chooseSaveLibraryButton = new QPushButton(QStringLiteral("添加存档目录"), saveGroup);
     m_openSaveButton = new QPushButton(QStringLiteral("打开存档目录"), saveGroup);
@@ -260,6 +262,8 @@ void MainWindow::setupUi()
         "选中存档库中的存档时，会先备份 C 盘旧存档，再复制该存档到游戏存档目录。"));
     m_backupButton->setToolTip(QStringLiteral(
         "按备份策略把选中存档复制到备份目录，并清理超过保留份数的旧备份。"));
+    m_deleteSaveButton->setToolTip(QStringLiteral(
+        "将选中的存档库存档目录移到 Windows 回收站，可从回收站恢复。"));
     m_overrideButton->setToolTip(QStringLiteral(
         "为选中存档手动指定游戏版本；选择“自动匹配”可清除手动指定。"));
     m_chooseSaveLibraryButton->setToolTip(
@@ -281,7 +285,7 @@ void MainWindow::setupUi()
 
     auto *saveButtons = new QHBoxLayout();
     for (QPushButton *button :
-         {m_backupButton, m_overrideButton, m_chooseSaveLibraryButton,
+         {m_backupButton, m_deleteSaveButton, m_overrideButton, m_chooseSaveLibraryButton,
           m_openSaveButton, m_refreshButton}) {
         button->setAutoDefault(false);
         saveButtons->addWidget(button);
@@ -346,6 +350,7 @@ void MainWindow::setupUi()
 
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::startSelectedGame);
     connect(m_backupButton, &QPushButton::clicked, this, &MainWindow::backupSelectedSave);
+    connect(m_deleteSaveButton, &QPushButton::clicked, this, &MainWindow::deleteSelectedSave);
     connect(m_overrideButton, &QPushButton::clicked, this, &MainWindow::overrideSaveVersion);
     connect(m_chooseSaveLibraryButton, &QPushButton::clicked, this,
             &MainWindow::chooseSaveLibrary);
@@ -744,7 +749,9 @@ void MainWindow::updateActionStates()
     const QString versionId = selectedVersionId();
     const VersionInfo *selected = versionId.isEmpty() ? nullptr : m_library.findVersion(versionId);
     const VersionInfo *base = m_library.baseVersion();
-    const bool hasSave = selectedSaveRow() >= 0;
+    const int saveRow = selectedSaveRow();
+    const bool hasSave = saveRow >= 0;
+    const bool canDeleteSave = hasSave && isLibrarySave(m_saves.at(saveRow));
     const bool baseUsable = base && base->exists;
 
     const bool canDedup = !busy && selected && selected->exists && !selected->volatileSource
@@ -764,6 +771,7 @@ void MainWindow::updateActionStates()
 
     m_startButton->setEnabled(!busy && (hasSave || (selected && selected->exists)));
     m_backupButton->setEnabled(!busy && hasSave);
+    m_deleteSaveButton->setEnabled(!busy && canDeleteSave);
     m_overrideButton->setEnabled(!busy && hasSave && !m_library.versions.isEmpty());
     m_chooseSaveLibraryButton->setEnabled(!busy);
     m_openSaveButton->setEnabled(hasSave);
@@ -1993,6 +2001,65 @@ void MainWindow::backupSelectedSave()
                          .arg(result->path)
                          .arg(pruned));
         });
+}
+
+void MainWindow::deleteSelectedSave()
+{
+    const int row = selectedSaveRow();
+    if (row < 0)
+        return;
+
+    const SaveInfo save = m_saves.at(row);
+    const QString directory = QDir::cleanPath(save.directory);
+    const QString savesRoot = QDir::cleanPath(m_config.savesRoot);
+    const QString libraryRoot = QDir::cleanPath(m_config.saveLibraryRoot);
+
+    // 防御性校验：只允许删除存档库内、且不属于 C 盘运行时存档的目录。
+    const auto isSameOrChild = [](const QString &path, const QString &parent) {
+        if (parent.isEmpty())
+            return false;
+        return path.compare(parent, Qt::CaseInsensitive) == 0
+               || path.startsWith(parent + QLatin1Char('/'), Qt::CaseInsensitive);
+    };
+    if (isSameOrChild(directory, savesRoot) || !isSameOrChild(directory, libraryRoot)) {
+        showError(QStringLiteral("删除存档"),
+                  QStringLiteral("只能删除存档库中的存档：\n%1").arg(save.directory));
+        return;
+    }
+
+    QMessageBox box(QMessageBox::Warning, QStringLiteral("删除存档"),
+                    QStringLiteral("确定删除选中的存档吗？\n\n"
+                                   "世界：%1\n存档：%2\n路径：%3\n\n"
+                                   "整个存档目录将被移到 Windows 回收站，可从回收站恢复。")
+                        .arg(save.world, save.saveName,
+                             QDir::toNativeSeparators(save.directory)),
+                    QMessageBox::NoButton, this);
+    QPushButton *deleteButton =
+        box.addButton(QStringLiteral("移到回收站"), QMessageBox::DestructiveRole);
+    box.addButton(QStringLiteral("取消"), QMessageBox::RejectRole);
+    box.exec();
+    if (box.clickedButton() != deleteButton)
+        return;
+
+    QString trashPath;
+    if (!QFile::moveToTrash(save.directory, &trashPath)) {
+        showError(QStringLiteral("删除存档"),
+                  QStringLiteral("无法将存档移到回收站：\n%1").arg(save.directory));
+        return;
+    }
+
+    // 清除已删除存档的手动版本指定，避免残留无效记录。
+    const QString key = saveKey(save);
+    if (m_library.saveVersionOverrides.remove(key)) {
+        QString error;
+        if (!m_library.save(&error))
+            qWarning("%s", qUtf8Printable(error));
+    }
+
+    refreshSaveTable();
+    updateActionStates();
+    statusBar()->showMessage(
+        QStringLiteral("已将存档移到回收站：%1").arg(save.displayName()), 10000);
 }
 
 void MainWindow::overrideSaveVersion()

@@ -72,6 +72,8 @@ private:
     // 通过文件对话框选择额外扫描的存档库目录。
     void chooseSaveLibrary();
     void backupSelectedSave();
+    // 将选中的存档库存档目录移到 Windows 回收站。
+    void deleteSelectedSave();
     void overrideSaveVersion();
     void openSelectedSaveDirectory();
     void openVersionRoot();
@@ -113,6 +115,7 @@ private:
 
     QPushButton *m_startButton = nullptr;
     QPushButton *m_backupButton = nullptr;
+    QPushButton *m_deleteSaveButton = nullptr;
     QPushButton *m_overrideButton = nullptr;
     QPushButton *m_chooseSaveLibraryButton = nullptr;
     QPushButton *m_openSaveButton = nullptr;
