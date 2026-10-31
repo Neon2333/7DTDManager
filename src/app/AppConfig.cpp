@@ -106,6 +106,8 @@ AppConfig AppConfig::load(QString *error)
     const QJsonObject object = document.object();
     config.versionRoot = readString(object, QStringLiteral("versionRoot"), config.versionRoot);
     config.savesRoot = readString(object, QStringLiteral("savesRoot"), config.savesRoot);
+    config.saveLibraryRoot =
+        readString(object, QStringLiteral("saveLibraryRoot"), config.saveLibraryRoot);
     config.steamRoot = readString(object, QStringLiteral("steamRoot"), config.steamRoot);
     config.backupRoot = readString(object, QStringLiteral("backupRoot"), config.backupRoot);
     config.useNoEac = readBool(object, QStringLiteral("useNoEac"), config.useNoEac);
@@ -138,6 +140,7 @@ bool AppConfig::save(QString *error) const
     QJsonObject object;
     object.insert(QStringLiteral("versionRoot"), versionRoot);
     object.insert(QStringLiteral("savesRoot"), savesRoot);
+    object.insert(QStringLiteral("saveLibraryRoot"), saveLibraryRoot);
     object.insert(QStringLiteral("steamRoot"), steamRoot);
     object.insert(QStringLiteral("backupRoot"), backupRoot);
     object.insert(QStringLiteral("useNoEac"), useNoEac);

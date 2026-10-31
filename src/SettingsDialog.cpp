@@ -34,9 +34,13 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
     pathForm->addRow(QStringLiteral("版本汇集目录："),
                      createPathRow(&m_versionRootEdit, QStringLiteral("选择版本汇集目录"),
                                    config.versionRoot));
-    pathForm->addRow(QStringLiteral("存档目录："),
-                     createPathRow(&m_savesRootEdit, QStringLiteral("选择存档目录"),
+    pathForm->addRow(QStringLiteral("游戏存档目录："),
+                     createPathRow(&m_savesRootEdit, QStringLiteral("选择游戏存档目录"),
                                    config.savesRoot));
+    pathForm->addRow(QStringLiteral("存档库目录（可为空）："),
+                     createPathRow(&m_saveLibraryRootEdit,
+                                   QStringLiteral("选择存档库目录"),
+                                   config.saveLibraryRoot));
     pathForm->addRow(QStringLiteral("Steam 安装目录："),
                      createPathRow(&m_steamRootEdit,
                                    QStringLiteral("选择 Steam 游戏安装目录（仅用于导入）"),
@@ -50,8 +54,12 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
     auto *launchLayout = new QVBoxLayout(launchGroup);
     m_noEacCheck = new QCheckBox(QStringLiteral("使用 -noeac 启动（单机推荐）"), launchGroup);
     m_noEacCheck->setChecked(config.useNoEac);
+    m_noEacCheck->setToolTip(QStringLiteral(
+        "启动时追加 -noeac；单机推荐，联机是否可用需自行验证。"));
     m_skipIntroCheck = new QCheckBox(QStringLiteral("使用 -skipintro 跳过开场动画"), launchGroup);
     m_skipIntroCheck->setChecked(config.skipIntro);
+    m_skipIntroCheck->setToolTip(QStringLiteral(
+        "启动时追加 -skipintro，跳过开场动画。"));
     m_autoLoadCheck = new QCheckBox(QStringLiteral("自动加载选中的存档（-LoadSaveGame）"), launchGroup);
     m_autoLoadCheck->setChecked(config.autoLoadSave);
     m_autoLoadCheck->setToolTip(QStringLiteral(
@@ -94,6 +102,10 @@ SettingsDialog::SettingsDialog(const AppConfig &config, QWidget *parent)
     mainLayout->addWidget(excludeGroup, 1);
 
     auto *buttons = new QDialogButtonBox(QDialogButtonBox::Ok | QDialogButtonBox::Cancel, this);
+    if (QPushButton *okButton = buttons->button(QDialogButtonBox::Ok))
+        okButton->setToolTip(QStringLiteral("保存设置并关闭对话框。"));
+    if (QPushButton *cancelButton = buttons->button(QDialogButtonBox::Cancel))
+        cancelButton->setToolTip(QStringLiteral("放弃本次修改并关闭对话框。"));
     connect(buttons, &QDialogButtonBox::accepted, this, &SettingsDialog::accept);
     connect(buttons, &QDialogButtonBox::rejected, this, &QDialog::reject);
     mainLayout->addWidget(buttons);
@@ -109,6 +121,7 @@ QWidget *SettingsDialog::createPathRow(QLineEdit **editOut, const QString &dialo
     auto *edit = new QLineEdit(initialPath, container);
     auto *browse = new QPushButton(QStringLiteral("浏览..."), container);
     browse->setAutoDefault(false);
+    browse->setToolTip(dialogTitle);
 
     connect(browse, &QPushButton::clicked, this, [this, edit, dialogTitle] {
         const QString initial = edit->text().isEmpty() ? m_config.versionRoot : edit->text();
@@ -128,6 +141,8 @@ void SettingsDialog::accept()
 {
     const QString versionRoot = QDir::toNativeSeparators(m_versionRootEdit->text().trimmed());
     const QString savesRoot = QDir::toNativeSeparators(m_savesRootEdit->text().trimmed());
+    const QString saveLibraryRoot =
+        QDir::toNativeSeparators(m_saveLibraryRootEdit->text().trimmed());
     const QString steamRoot = QDir::toNativeSeparators(m_steamRootEdit->text().trimmed());
     QString backupRoot = QDir::toNativeSeparators(m_backupRootEdit->text().trimmed());
 
@@ -141,7 +156,14 @@ void SettingsDialog::accept()
 
     if (savesRoot.isEmpty() || !QFileInfo(savesRoot).isDir()) {
         QMessageBox::warning(this, QStringLiteral("设置"),
-                             QStringLiteral("存档目录不存在，请选择一个已存在的目录。"));
+                             QStringLiteral("游戏存档目录不存在，请选择一个已存在的目录。"));
+        return;
+    }
+
+    if (!saveLibraryRoot.isEmpty() && !QFileInfo(saveLibraryRoot).isDir()) {
+        QMessageBox::warning(this, QStringLiteral("设置"),
+                             QStringLiteral("存档库目录不存在，请选择一个已存在的目录，"
+                                            "或留空。"));
         return;
     }
 
@@ -173,6 +195,7 @@ void SettingsDialog::accept()
 
     m_config.versionRoot = versionRoot;
     m_config.savesRoot = savesRoot;
+    m_config.saveLibraryRoot = saveLibraryRoot;
     m_config.steamRoot = steamRoot;
     m_config.backupRoot = backupRoot;
     m_config.useNoEac = m_noEacCheck->isChecked();

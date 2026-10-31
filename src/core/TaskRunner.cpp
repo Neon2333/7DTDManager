@@ -67,8 +67,9 @@ void TaskRunner::start(const QString &title, Task task)
 
     emit started(title);
 
-    m_watcher = new QFutureWatcher<void>(this);
-    connect(m_watcher, &QFutureWatcher<void>::finished, this, [this] {
+    auto *watcher = new QFutureWatcher<void>(this);
+    m_watcher = watcher;
+    connect(watcher, &QFutureWatcher<void>::finished, this, [this, watcher] {
         m_running = false;
         const bool canceled = m_cancel.load();
         const bool ok = !m_failed && !canceled;
@@ -79,12 +80,14 @@ void TaskRunner::start(const QString &title, Task task)
             message = QStringLiteral("已取消");
         else
             message = QStringLiteral("完成");
-        emit finished(ok, message);
 
-        if (m_watcher) {
-            m_watcher->deleteLater();
+        // 先清理本次任务的 watcher，再发出 finished：完成回调可能立即启动
+        // 下一个任务并写入新的 m_watcher，若在回调后再按成员清理会误删新任务。
+        if (m_watcher == watcher)
             m_watcher = nullptr;
-        }
+        watcher->deleteLater();
+
+        emit finished(ok, message);
     });
 
     m_watcher->setFuture(QtConcurrent::run([this, task = std::move(task)]() mutable {

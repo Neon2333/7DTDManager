@@ -44,7 +44,14 @@ private:
     int selectedSaveRow() const;
     const VersionInfo *versionForSave(const SaveInfo &save, bool *matched) const;
     static QString saveKey(const SaveInfo &save);
+    static QString rowKey(const SaveInfo &save);
     static QString versionDisplayName(const VersionInfo &version);
+    // 存档是否来自额外添加的存档库目录。
+    bool isLibrarySave(const SaveInfo &save) const;
+    // 返回存档来源的显示文本（游戏存档/存档库）。
+    QString saveSourceLabel(const SaveInfo &save) const;
+    // 扫描存档库，确认后给缺少时间戳后缀的存档目录改名。
+    void maybeNormalizeLibraryNames();
 
     void runTask(const QString &title, TaskRunner::Task task,
                  std::function<void(bool, const QString &)> onFinished);
@@ -59,6 +66,11 @@ private:
     void breakLinksSelectedVersion();
     void startSelectedGame();
     void launchSelectedVersion();
+    // 把存档库中的存档复制到游戏存档目录（先备份 C 盘同名存档）并启动。
+    void launchLibrarySave(const SaveInfo &save, const QString &saveRelative,
+                           const VersionInfo &target);
+    // 通过文件对话框选择额外扫描的存档库目录。
+    void chooseSaveLibrary();
     void backupSelectedSave();
     void overrideSaveVersion();
     void openSelectedSaveDirectory();
@@ -102,6 +114,7 @@ private:
     QPushButton *m_startButton = nullptr;
     QPushButton *m_backupButton = nullptr;
     QPushButton *m_overrideButton = nullptr;
+    QPushButton *m_chooseSaveLibraryButton = nullptr;
     QPushButton *m_openSaveButton = nullptr;
     QPushButton *m_refreshButton = nullptr;
 
@@ -110,6 +123,7 @@ private:
     std::function<void(bool, const QString &)> m_taskCallback;
     QString m_launchedVersionId;
     bool m_userDataWarned = false;
+    bool m_libraryRenameDeclined = false;
     bool m_usageValid = false;
     qint64 m_globalLogicalBytes = 0;
     qint64 m_globalPhysicalBytes = 0;

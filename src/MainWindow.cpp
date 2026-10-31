@@ -8,12 +8,14 @@
 #include "core/GameLauncher.h"
 #include "core/LogWatcher.h"
 #include "core/PathUtils.h"
+#include "core/SaveInstaller.h"
 #include "core/TaskRunner.h"
 #include "core/Version.h"
 
 #include <QAction>
 #include <QApplication>
 #include <QCloseEvent>
+#include <QDateTime>
 #include <QDesktopServices>
 #include <QDialog>
 #include <QDir>
@@ -31,6 +33,7 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QPushButton>
+#include <QSet>
 #include <QSignalBlocker>
 #include <QSizePolicy>
 #include <QSplitter>
@@ -154,6 +157,29 @@ void MainWindow::setupUi()
     m_removeButton = new QPushButton(QStringLiteral("删除版本"), versionGroup);
     m_launchVersionButton = new QPushButton(QStringLiteral("启动版本"), versionGroup);
 
+    m_importButton->setToolTip(QStringLiteral(
+        "从 Steam 安装目录复制一个完整游戏版本到版本汇集目录；"
+        "不会移动或修改 Steam 原目录。"));
+    m_addButton->setToolTip(QStringLiteral(
+        "登记一个已存在的完整游戏目录；只添加记录，不复制文件。"));
+    m_baseButton->setToolTip(QStringLiteral(
+        "通过文件对话框选择任意完整游戏目录设为基准；"
+        "会校验完整性、NTFS、同卷，且不能位于 Steam 管理目录下。"));
+    m_setBaseButton->setToolTip(QStringLiteral(
+        "将版本表中选中的版本设为基准；已建立的硬链接不会自动改变。"));
+    m_dedupButton->setToolTip(QStringLiteral(
+        "将选中版本与基准版本中相同的文件建立硬链接；"
+        "执行前会显示可共享文件数和预计节省空间。"));
+    m_verifyButton->setToolTip(QStringLiteral(
+        "按基准清单校验基准目录是否被修改；发现漂移时会列出不一致的文件。"));
+    m_breakButton->setToolTip(QStringLiteral(
+        "将选中版本中的共享文件复制为独立副本；"
+        "会恢复版本独立性，但会占用额外磁盘空间。"));
+    m_removeButton->setToolTip(QStringLiteral(
+        "从版本库移除选中版本；可选择只删除记录，或同时删除磁盘目录。"));
+    m_launchVersionButton->setToolTip(QStringLiteral(
+        "直接启动选中的游戏版本，不自动加载存档。"));
+
     // 创建带标题的按钮分组，供版本操作区按流程排列。
     auto makeActionGroup = [versionGroup](const QString &title,
                                           const QList<QPushButton *> &buttons) {
@@ -208,11 +234,11 @@ void MainWindow::setupUi()
     auto *saveGroup = new QGroupBox(QStringLiteral("存档管理"), splitter);
     auto *saveLayout = new QVBoxLayout(saveGroup);
 
-    m_saveTable = new QTableWidget(0, 7, saveGroup);
+    m_saveTable = new QTableWidget(0, 8, saveGroup);
     m_saveTable->setHorizontalHeaderLabels(
         {QStringLiteral("世界"), QStringLiteral("存档"), QStringLiteral("原始版本"),
          QStringLiteral("最后保存版本"), QStringLiteral("最后修改"), QStringLiteral("对应游戏版本"),
-         QStringLiteral("状态")});
+         QStringLiteral("状态"), QStringLiteral("来源")});
     m_saveTable->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_saveTable->setSelectionMode(QAbstractItemView::SingleSelection);
     m_saveTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
@@ -224,8 +250,23 @@ void MainWindow::setupUi()
     m_startButton = new QPushButton(QStringLiteral("从版本开始游戏"), saveGroup);
     m_backupButton = new QPushButton(QStringLiteral("备份存档"), saveGroup);
     m_overrideButton = new QPushButton(QStringLiteral("指定版本"), saveGroup);
+    m_chooseSaveLibraryButton = new QPushButton(QStringLiteral("添加存档目录"), saveGroup);
     m_openSaveButton = new QPushButton(QStringLiteral("打开存档目录"), saveGroup);
     m_refreshButton = new QPushButton(QStringLiteral("刷新"), saveGroup);
+
+    m_startButton->setToolTip(QStringLiteral(
+        "使用存档匹配（或当前选中）的游戏版本启动；"
+        "选中存档库中的存档时，会先备份 C 盘旧存档，再复制该存档到游戏存档目录。"));
+    m_backupButton->setToolTip(QStringLiteral(
+        "按备份策略把选中存档复制到备份目录，并清理超过保留份数的旧备份。"));
+    m_overrideButton->setToolTip(QStringLiteral(
+        "为选中存档手动指定游戏版本；选择“自动匹配”可清除手动指定。"));
+    m_chooseSaveLibraryButton->setToolTip(
+        QStringLiteral("选择额外扫描的存档库目录；启动时会把它里面的存档复制到游戏存档目录。"));
+    m_openSaveButton->setToolTip(QStringLiteral(
+        "在资源管理器中打开选中存档所在目录。"));
+    m_refreshButton->setToolTip(QStringLiteral(
+        "重新扫描游戏版本与存档，并统计版本占用；文件较多时可能需要一些时间。"));
 
     // 从版本开始游戏是存档区的主操作，单独放大显示。
     QFont startFont = m_startButton->font();
@@ -239,7 +280,8 @@ void MainWindow::setupUi()
 
     auto *saveButtons = new QHBoxLayout();
     for (QPushButton *button :
-         {m_backupButton, m_overrideButton, m_openSaveButton, m_refreshButton}) {
+         {m_backupButton, m_overrideButton, m_chooseSaveLibraryButton,
+          m_openSaveButton, m_refreshButton}) {
         button->setAutoDefault(false);
         saveButtons->addWidget(button);
     }
@@ -264,6 +306,8 @@ void MainWindow::setupUi()
     m_progressBar->setVisible(false);
     m_cancelTaskButton = new QPushButton(QStringLiteral("取消任务"), this);
     m_cancelTaskButton->setAutoDefault(false);
+    m_cancelTaskButton->setToolTip(
+        QStringLiteral("取消当前正在执行的导入、去重、统计或存档复制任务。"));
     m_cancelTaskButton->setVisible(false);
 
     statusBar()->addWidget(m_rootLabel, 1);
@@ -302,6 +346,8 @@ void MainWindow::setupUi()
     connect(m_startButton, &QPushButton::clicked, this, &MainWindow::startSelectedGame);
     connect(m_backupButton, &QPushButton::clicked, this, &MainWindow::backupSelectedSave);
     connect(m_overrideButton, &QPushButton::clicked, this, &MainWindow::overrideSaveVersion);
+    connect(m_chooseSaveLibraryButton, &QPushButton::clicked, this,
+            &MainWindow::chooseSaveLibrary);
     connect(m_openSaveButton, &QPushButton::clicked, this,
             &MainWindow::openSelectedSaveDirectory);
     connect(m_refreshButton, &QPushButton::clicked, this, [this] {
@@ -359,10 +405,14 @@ void MainWindow::refreshAll()
     m_rootLabel->setText(QStringLiteral("版本根：%1")
                              .arg(m_config.versionRoot.isEmpty() ? QStringLiteral("未设置")
                                                                 : m_config.versionRoot));
-    m_savesLabel->setText(QStringLiteral("存档根：%1（%2 个存档）")
-                              .arg(m_config.savesRoot.isEmpty() ? QStringLiteral("未设置")
-                                                                : m_config.savesRoot)
-                              .arg(m_saves.size()));
+    QString savesText =
+        QStringLiteral("游戏存档：%1")
+            .arg(m_config.savesRoot.isEmpty() ? QStringLiteral("未设置")
+                                              : m_config.savesRoot);
+    if (!m_config.saveLibraryRoot.isEmpty())
+        savesText += QStringLiteral("；存档库：%1").arg(m_config.saveLibraryRoot);
+    savesText += QStringLiteral("（共 %1 个存档）").arg(m_saves.size());
+    m_savesLabel->setText(savesText);
 }
 
 void MainWindow::refreshVersionTable(const QString &selectId)
@@ -428,13 +478,45 @@ void MainWindow::refreshVersionTable(const QString &selectId)
 
 void MainWindow::refreshSaveTable(const QString &selectKey)
 {
+    maybeNormalizeLibraryNames();
+
     const int previousRow = selectedSaveRow();
     const QString keepKey = !selectKey.isEmpty()
                                 ? selectKey
-                                : (previousRow >= 0 ? saveKey(m_saves.at(previousRow)) : QString());
+                                : (previousRow >= 0 ? rowKey(m_saves.at(previousRow)) : QString());
 
-    const SaveScanResult scan = SaveScanner::scan(m_config.savesRoot);
-    m_saves = scan.saves;
+    QVector<SaveInfo> saves;
+    QStringList scanErrors;
+    QSet<QString> scannedRoots;
+    auto scanRoot = [&saves, &scanErrors, &scannedRoots](const QString &root) {
+        if (root.isEmpty())
+            return;
+        const QString key = QDir::cleanPath(root).toLower();
+        if (scannedRoots.contains(key))
+            return;
+        scannedRoots.insert(key);
+        if (!QFileInfo(root).isDir()) {
+            scanErrors << QStringLiteral("存档目录不存在：%1").arg(root);
+            return;
+        }
+        const SaveScanResult scan = SaveScanner::scan(root);
+        if (!scan.error.isEmpty())
+            scanErrors << scan.error;
+        saves += scan.saves;
+    };
+
+    scanRoot(m_config.savesRoot);
+    const QString libraryRoot = QDir::cleanPath(m_config.saveLibraryRoot);
+    if (!m_config.saveLibraryRoot.isEmpty()
+        && libraryRoot.compare(QDir::cleanPath(m_config.savesRoot), Qt::CaseInsensitive) != 0) {
+        for (const QString &root : SaveScanner::discoverSavesRoots(m_config.saveLibraryRoot))
+            scanRoot(root);
+    }
+
+    std::stable_sort(saves.begin(), saves.end(), [](const SaveInfo &a, const SaveInfo &b) {
+        return a.lastModified > b.lastModified;
+    });
+    m_saves = saves;
 
     QSignalBlocker blocker(m_saveTable);
     m_saveTable->setRowCount(0);
@@ -451,7 +533,7 @@ void MainWindow::refreshSaveTable(const QString &selectKey)
         };
 
         setItem(0, save.world);
-        m_saveTable->item(row, 0)->setData(Qt::UserRole, saveKey(save));
+        m_saveTable->item(row, 0)->setData(Qt::UserRole, rowKey(save));
         setItem(1, save.saveName);
         setItem(2, save.originalVersion.isEmpty() ? QStringLiteral("-") : save.originalVersion,
                 save.originalVersion.isEmpty() ? QStringLiteral("没有 ext.bak，无法确定原始版本")
@@ -479,6 +561,7 @@ void MainWindow::refreshSaveTable(const QString &selectKey)
         else
             statuses << QStringLiteral("可启动");
         setItem(6, statuses.join(QStringLiteral("；")));
+        setItem(7, saveSourceLabel(save), save.sourceRoot);
     }
 
     m_saveTable->resizeColumnsToContents();
@@ -493,8 +576,103 @@ void MainWindow::refreshSaveTable(const QString &selectKey)
         }
     }
 
-    if (!scan.error.isEmpty())
-        statusBar()->showMessage(scan.error, 8000);
+    if (!scanErrors.isEmpty())
+        statusBar()->showMessage(scanErrors.join(QStringLiteral("；")), 8000);
+}
+
+void MainWindow::maybeNormalizeLibraryNames()
+{
+    if (m_libraryRenameDeclined || m_config.saveLibraryRoot.isEmpty())
+        return;
+    if (QDir::cleanPath(m_config.saveLibraryRoot)
+            .compare(QDir::cleanPath(m_config.savesRoot), Qt::CaseInsensitive)
+        == 0) {
+        return;
+    }
+    if (!QFileInfo(m_config.saveLibraryRoot).isDir())
+        return;
+
+    QVector<SaveRenamePlan> plans;
+    for (const QString &root : SaveScanner::discoverSavesRoots(m_config.saveLibraryRoot))
+        plans += SaveScanner::planTimestampRenames(root);
+    if (plans.isEmpty())
+        return;
+
+    QStringList lines;
+    const int shown = qMin(10, plans.size());
+    for (int i = 0; i < shown; ++i) {
+        lines << QStringLiteral("%1 → %2").arg(plans.at(i).fromName, plans.at(i).toName);
+    }
+    if (shown < plans.size())
+        lines << QStringLiteral("... 其余 %1 项已省略").arg(plans.size() - shown);
+
+    const auto answer = QMessageBox::question(
+        this, QStringLiteral("存档库目录重命名"),
+        QStringLiteral("检测到 %1 个存档目录未按标准格式命名。\n"
+                       "将按 main.ttw 的版本和保存时间重命名为 "
+                       "7DTDSaves_<版本>_<时间戳>：\n\n"
+                       "%2\n\n是否执行？")
+            .arg(plans.size())
+            .arg(lines.join(QLatin1Char('\n'))),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer != QMessageBox::Yes) {
+        m_libraryRenameDeclined = true;
+        return;
+    }
+
+    QString error;
+    if (!SaveScanner::applyRenames(plans, &error)) {
+        showError(QStringLiteral("存档库重命名失败"), error);
+        return;
+    }
+
+    // 目录改名后同步“手动指定版本”的键，避免旧覆盖失效。
+    bool overridesChanged = false;
+    for (const SaveRenamePlan &plan : plans) {
+        const QString world = QFileInfo(plan.fromPath).dir().dirName();
+        const QString oldKey = world + QLatin1Char('/') + plan.fromName;
+        if (!m_library.saveVersionOverrides.contains(oldKey))
+            continue;
+        const QString versionId = m_library.saveVersionOverrides.take(oldKey);
+        m_library.saveVersionOverrides.insert(
+            world + QLatin1Char('/') + plan.toName, versionId);
+        overridesChanged = true;
+    }
+    if (overridesChanged && !m_library.save(&error))
+        qWarning("%s", qUtf8Printable(error));
+
+    statusBar()->showMessage(
+        QStringLiteral("已将 %1 个存档目录重命名为 7DTDSaves_<版本>_<时间戳>。")
+            .arg(plans.size()),
+        8000);
+}
+
+void MainWindow::chooseSaveLibrary()
+{
+    const QString initial = m_config.saveLibraryRoot.isEmpty() ? m_config.savesRoot
+                                                               : m_config.saveLibraryRoot;
+    const QString chosen = QFileDialog::getExistingDirectory(
+        this, QStringLiteral("选择存档目录"), initial, QFileDialog::ShowDirsOnly);
+    if (chosen.isEmpty())
+        return;
+
+    const QString directory = QDir::toNativeSeparators(chosen);
+    if (QDir::cleanPath(directory)
+            .compare(QDir::cleanPath(m_config.savesRoot), Qt::CaseInsensitive)
+        == 0) {
+        showInfo(QStringLiteral("添加存档目录"),
+                 QStringLiteral("该目录就是游戏存档目录，无需重复添加。"));
+        return;
+    }
+
+    m_config.saveLibraryRoot = directory;
+    m_libraryRenameDeclined = false;
+
+    QString error;
+    if (!m_config.save(&error))
+        showError(QStringLiteral("保存配置失败"), error);
+
+    refreshAll();
 }
 
 void MainWindow::updateSummary()
@@ -557,6 +735,7 @@ void MainWindow::updateActionStates()
     m_startButton->setEnabled(!busy && (hasSave || (selected && selected->exists)));
     m_backupButton->setEnabled(!busy && hasSave);
     m_overrideButton->setEnabled(!busy && hasSave && !m_library.versions.isEmpty());
+    m_chooseSaveLibraryButton->setEnabled(!busy);
     m_openSaveButton->setEnabled(hasSave);
     m_refreshButton->setEnabled(!busy);
 }
@@ -622,6 +801,25 @@ const VersionInfo *MainWindow::versionForSave(const SaveInfo &save, bool *matche
 QString MainWindow::saveKey(const SaveInfo &save)
 {
     return save.world + QLatin1Char('/') + save.saveName;
+}
+
+QString MainWindow::rowKey(const SaveInfo &save)
+{
+    return QDir::cleanPath(save.sourceRoot) + QLatin1Char('\n') + saveKey(save);
+}
+
+bool MainWindow::isLibrarySave(const SaveInfo &save) const
+{
+    if (save.sourceRoot.isEmpty())
+        return false;
+    return QDir::cleanPath(save.sourceRoot)
+               .compare(QDir::cleanPath(m_config.savesRoot), Qt::CaseInsensitive)
+           != 0;
+}
+
+QString MainWindow::saveSourceLabel(const SaveInfo &save) const
+{
+    return isLibrarySave(save) ? QStringLiteral("存档库") : QStringLiteral("游戏存档");
 }
 
 QString MainWindow::versionDisplayName(const VersionInfo &version)
@@ -1485,6 +1683,8 @@ void MainWindow::startSelectedGame()
         return;
     }
 
+    const bool librarySave = hasSave && isLibrarySave(save);
+
     bool mismatch = false;
     if (hasSave) {
         if (save.lastSavedVersion.isEmpty()) {
@@ -1518,7 +1718,7 @@ void MainWindow::startSelectedGame()
         if (box.clickedButton() != force)
             return;
 
-        if (m_config.backupPolicy == QStringLiteral("never")) {
+        if (!librarySave && m_config.backupPolicy == QStringLiteral("never")) {
             showError(QStringLiteral("无法强制启动"),
                       QStringLiteral("当前备份策略为“从不备份”。强制跨版本启动必须先备份，"
                                      "请先在设置中修改备份策略。"));
@@ -1527,8 +1727,16 @@ void MainWindow::startSelectedGame()
     }
 
     const VersionInfo targetCopy = *target;
+    const QString baseSaveName =
+        librarySave ? SaveScanner::stripTimestampSuffix(save.saveName) : save.saveName;
     const QString saveRelative =
-        hasSave ? save.world + QLatin1Char('/') + save.saveName : QString();
+        hasSave ? save.world + QLatin1Char('/') + baseSaveName : QString();
+
+    // 存档库中的存档需要先复制到游戏存档目录，再启动。
+    if (librarySave) {
+        launchLibrarySave(save, saveRelative, targetCopy);
+        return;
+    }
 
     bool needBackup = false;
     if (hasSave) {
@@ -1572,6 +1780,78 @@ void MainWindow::startSelectedGame()
             statusBar()->showMessage(
                 QStringLiteral("已备份到：%1").arg(result->path), 8000);
             launchVerified(targetCopy, saveRelative);
+        });
+}
+
+void MainWindow::launchLibrarySave(const SaveInfo &save, const QString &saveRelative,
+                                   const VersionInfo &target)
+{
+    const QString baseSaveName = SaveScanner::stripTimestampSuffix(save.saveName);
+    const QString destination =
+        QDir(m_config.savesRoot).filePath(save.world + QLatin1Char('/') + baseSaveName);
+    // 存档可能来自 <存档库>\<版本>\Saves，备份也写回该实际 Saves 目录。
+    const QString libraryRoot =
+        save.sourceRoot.isEmpty() ? m_config.saveLibraryRoot : save.sourceRoot;
+    const QString libraryWorldDir = QDir(libraryRoot).filePath(save.world);
+
+    auto result = std::make_shared<SaveInstallResult>();
+    auto backupPath = std::make_shared<QString>();
+
+    runTask(
+        QStringLiteral("准备存档并启动"),
+        [result, backupPath, save, destination, libraryWorldDir](TaskContext &context) {
+            const bool targetExists = PathUtils::isDirectory(destination);
+
+            // C 盘已有同名存档时，先把它保存回存档库，避免覆盖后丢失上次游玩记录。
+            if (targetExists) {
+                QString error;
+                if (!PathUtils::ensureDir(libraryWorldDir, &error)) {
+                    context.fail(error);
+                    return;
+                }
+                const QStringList existing = QDir(libraryWorldDir)
+                                                 .entryList(QDir::Dirs | QDir::NoDotAndDotDot);
+                const QString baseName = SaveScanner::stripTimestampSuffix(save.saveName);
+                const QString backupName = SaveScanner::timestampedName(
+                    baseName, QDateTime::currentDateTime(), existing);
+                *backupPath = QDir(libraryWorldDir).filePath(backupName);
+
+                const SaveInstallResult backup = SaveInstaller::install(
+                    destination, *backupPath, context.cancelFlag(),
+                    [&context](int percent, const QString &message) {
+                        context.report(percent * 40 / 100,
+                                       QStringLiteral("备份 C 盘存档：%1").arg(message));
+                    });
+                if (!backup.ok) {
+                    if (!backup.canceled)
+                        context.fail(backup.error);
+                    return;
+                }
+            }
+
+            *result = SaveInstaller::install(
+                save.directory, destination, context.cancelFlag(),
+                [&context, targetExists](int percent, const QString &message) {
+                    const int mapped = targetExists ? 40 + percent * 60 / 100 : percent;
+                    context.report(mapped,
+                                   QStringLiteral("复制到游戏存档目录：%1").arg(message));
+                });
+            if (!result->ok && !result->canceled)
+                context.fail(result->error);
+        },
+        [this, target, saveRelative, backupPath](bool ok, const QString &message) {
+            if (!ok) {
+                if (message != QStringLiteral("已取消"))
+                    showError(QStringLiteral("准备存档失败"), message);
+                return;
+            }
+
+            if (!backupPath->isEmpty()) {
+                statusBar()->showMessage(
+                    QStringLiteral("C 盘原存档已保存到存档库：%1").arg(*backupPath), 10000);
+            }
+            refreshSaveTable();
+            launchVerified(target, saveRelative);
         });
 }
 
@@ -1729,7 +2009,7 @@ void MainWindow::overrideSaveVersion()
     if (!m_library.save(&error))
         showError(QStringLiteral("保存版本库失败"), error);
 
-    refreshSaveTable(key);
+    refreshSaveTable(rowKey(save));
     updateActionStates();
 }
 
@@ -1768,6 +2048,7 @@ void MainWindow::openSettings()
         return;
 
     m_config = dialog.config();
+    m_libraryRenameDeclined = false;
 
     QString error;
     m_library = Library::load(m_config.versionRoot, &error);

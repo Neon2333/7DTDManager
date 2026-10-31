@@ -39,6 +39,8 @@ qt_add_executable(SevenDaysManager WIN32
     src/core/LogWatcher.cpp
     src/core/PathUtils.h
     src/core/PathUtils.cpp
+    src/core/SaveInstaller.h
+    src/core/SaveInstaller.cpp
     src/core/SaveScanner.h
     src/core/SaveScanner.cpp
     src/core/TaskRunner.h
@@ -111,4 +113,34 @@ target_include_directories(SevenDaysLogTests PRIVATE src)
 target_link_libraries(SevenDaysLogTests PRIVATE Qt6::Core)
 if(MSVC)
     target_compile_options(SevenDaysLogTests PRIVATE /utf-8)
+endif()
+
+qt_add_executable(SevenDaysTaskTests
+    tests/test_taskrunner.cpp
+    src/core/TaskRunner.h
+    src/core/TaskRunner.cpp
+)
+
+target_include_directories(SevenDaysTaskTests PRIVATE src)
+target_link_libraries(SevenDaysTaskTests PRIVATE Qt6::Core Qt6::Concurrent)
+if(MSVC)
+    target_compile_options(SevenDaysTaskTests PRIVATE /utf-8)
+endif()
+
+qt_add_executable(SevenDaysSaveTests
+    tests/test_saveinstaller.cpp
+    src/core/PathUtils.h
+    src/core/PathUtils.cpp
+    src/core/SaveInstaller.h
+    src/core/SaveInstaller.cpp
+    src/core/SaveScanner.h
+    src/core/SaveScanner.cpp
+    src/core/Version.h
+    src/core/Version.cpp
+)
+
+target_include_directories(SevenDaysSaveTests PRIVATE src)
+target_link_libraries(SevenDaysSaveTests PRIVATE Qt6::Core)
+if(MSVC)
+    target_compile_options(SevenDaysSaveTests PRIVATE /utf-8)
 endif()

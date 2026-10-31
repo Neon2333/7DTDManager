@@ -33,6 +33,7 @@ private:
 
     QLineEdit *m_versionRootEdit = nullptr;
     QLineEdit *m_savesRootEdit = nullptr;
+    QLineEdit *m_saveLibraryRootEdit = nullptr;
     QLineEdit *m_steamRootEdit = nullptr;
     QLineEdit *m_backupRootEdit = nullptr;
     QCheckBox *m_noEacCheck = nullptr;

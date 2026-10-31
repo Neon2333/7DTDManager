@@ -28,13 +28,26 @@
 
 ### 存档管理
 
+- 同时扫描两个来源：
+  - 游戏存档目录（默认 `%APPDATA%\7DaysToDie\Saves`）；
+  - 可选的存档库目录（如 `G:\7DTD_Saves`），通过“添加存档目录”指定。
+- 存档表新增“来源”列，区分“游戏存档 / 存档库”。
 - 扫描 `<存档目录>\<世界>\<存档>\main.ttw`。
+- 添加存档目录时支持自动识别实际存档根：
+  - 选择普通 `Saves` 目录时直接扫描自身；
+  - 选择某版本的用户数据目录（如 `G:\7DTD_versions\Saves\7DaysToDieV2.6`）时扫描其 `Saves` 子目录；
+  - 选择包含多个版本用户数据目录的父目录（如 `G:\7DTD_versions\Saves`）时，自动扫描各 `<版本目录>\Saves`，合并显示所有版本的存档。
 - 同时读取 `main.ttw` 与 `main.ttw.ext.bak`，显示：
   - 原始版本；
   - 最后保存版本；
   - 是否已被其他版本升级/重写。
+- 扫描存档库时，对没有时间戳后缀的存档目录提示重命名，格式为 `_yyyyMMdd_HHmmss`；重名时追加 `_2`、`_3`，避免不同版本或不同时间的同名存档互相覆盖。
 - 存档与游戏版本按主次版本号匹配；支持手动“指定版本”。
-- 选中存档点击“从版本开始游戏”时，自动选择对应版本目录启动。
+- 选中游戏存档时，自动选择对应版本目录启动。
+- 选中存档库中的存档点击“从版本开始游戏”时：
+  1. 若游戏存档目录已有同名存档，先把旧存档复制回存档库，并以时间戳名称保存；
+  2. 把选中的存档复制到游戏存档目录（覆盖同名存档）；
+  3. 按存档版本启动对应游戏。
 - 存档版本与所选游戏版本不一致时默认阻止，并提供“备份并强制启动”。
 
 ### 启动、自动加载与备份
@@ -97,6 +110,8 @@ build\Debug\SevenDaysManager.exe
 build\Debug\SevenDaysCoreTests.exe
 build\Debug\SevenDaysDedupTests.exe
 build\Debug\SevenDaysLogTests.exe
+build\Debug\SevenDaysTaskTests.exe
+build\Debug\SevenDaysSaveTests.exe
 ```
 
 Release 构建：
@@ -105,12 +120,24 @@ Release 构建：
 cmake --build build --config Release
 ```
 
-可选部署（生成带 Qt 运行库的 `dist\`）：
+可选部署（生成带 Qt 运行库的 `dist\app\`）：
 
 ```powershell
 D:\Qt\6.8.1\msvc2022_64\bin\windeployqt.exe --release --no-translations `
-  --dir dist build\Release\SevenDaysManager.exe
+  --dir dist\app build\Release\SevenDaysManager.exe
 ```
+
+`windeployqt` 不会复制 MSVC 运行库，需要把 VC143 CRT（`msvcp140.dll`、`vcruntime140.dll`、`vcruntime140_1.dll` 等）一并放入 `dist\app\`。
+
+### 打包安装程序
+
+使用 Inno Setup 6 将 `dist\app\` 打包为当前用户安装包（无需管理员权限）：
+
+```powershell
+"D:\Inno Setup 6\ISCC.exe" installer\SevenDaysManager.iss
+```
+
+输出：`dist\installer\SevenDaysManager-Setup-0.1.exe`。
 
 `app.manifest` 已启用长路径感知（`longPathAware`）与 PerMonitorV2 DPI。
 
@@ -120,19 +147,24 @@ D:\Qt\6.8.1\msvc2022_64\bin\windeployqt.exe --release --no-translations `
 build\Debug\SevenDaysCoreTests.exe
 build\Debug\SevenDaysDedupTests.exe
 build\Debug\SevenDaysLogTests.exe
+build\Debug\SevenDaysTaskTests.exe
+build\Debug\SevenDaysSaveTests.exe
 ```
 
 - `SevenDaysCoreTests`：版本号解析/匹配、存档扫描与 `main.ttw` 版本解析；
 - `SevenDaysDedupTests`：硬链接、去重计划/执行/解除、物理占用、备份；
-- `SevenDaysLogTests`：版本、`UserDataFolder`、跨版本警告、自动加载日志解析。
+- `SevenDaysLogTests`：版本、`UserDataFolder`、跨版本警告、自动加载日志解析；
+- `SevenDaysTaskTests`：后台任务完成回调中启动下一个任务的重入场景；
+- `SevenDaysSaveTests`：时间戳命名/重名处理、存档复制覆盖、取消保护、批量重命名、多版本 `Saves` 目录自动发现。
 
-去重测试只在临时目录中构造数据，不会修改真实游戏目录。
+去重与存档测试只在临时目录中构造数据，不会修改真实游戏目录。
 
 ## 使用流程
 
 1. 打开“设置...”，通过 `QFileDialog` 指定：
    - 版本汇集目录（如 `G:\7DTD_versions`）；
-   - 存档目录（默认 `%APPDATA%\7DaysToDie\Saves`）；
+   - 游戏存档目录（默认 `%APPDATA%\7DaysToDie\Saves`）；
+   - 存档库目录（可为空；选择后额外扫描，例如 `G:\7DTD_Saves`，不能与游戏存档目录相同）；
    - Steam 安装目录（仅用于导入新版本）；
    - 备份目录。
 2. 在“添加游戏版本”分组中，点击“导入 Steam 版本”输入版本标签（如 `V1.4`），复制到 `<版本根>\7 Days To DieV1.4`；或点击“添加已有目录”登记现有完整目录。
@@ -142,8 +174,9 @@ build\Debug\SevenDaysLogTests.exe
    - 是否与其他版本同卷；
    - 是否位于 Steam 正在管理的 `steamapps\common` 下（拒绝）。
 4. 选中非基准版本，在“去重与校验”分组中点击“去重”，查看干跑结果后确认执行。
-5. 在“存档管理”表中选择存档，点击大按钮“从版本开始游戏”。
-6. 跨版本启动时按提示备份并强制启动；“指定版本”可为单个存档手动指定游戏版本。
+5. 如需使用外部存档库，在“存档管理”分组点击“添加存档目录”选择目录；可直接选择某个 `Saves`，也可选择包含多个版本用户数据目录的父目录（如 `G:\7DTD_versions\Saves`）。工具会自动识别各 `<版本目录>\Saves`，存档表会同时显示“游戏存档”和“存档库”两个来源。
+6. 在“存档管理”表中选择存档，点击大按钮“从版本开始游戏”。选择存档库中的存档时，工具会先保存 C 盘旧存档，再把选中存档复制到游戏存档目录并启动。
+7. 跨版本启动时按提示备份并强制启动；“指定版本”可为单个存档手动指定游戏版本。
 
 界面中的版本操作按 **添加游戏版本 → 指定基准版本 → 去重与校验 → 删除游戏版本** 的顺序排列，组间用箭头提示流程；每一行操作也可单独使用。“启动版本”和“从版本开始游戏”分别是版本区、存档区的主操作大按钮，用于直接启动选中项。
 
@@ -181,7 +214,7 @@ build\Debug\SevenDaysLogTests.exe
 | 工具日志 | `%APPDATA%\7DTDManager\logs\app.log` |
 | 启动日志 | `%APPDATA%\7DTDManager\logs\launch_<版本ID>_<时间戳>.log` |
 
-存档目录默认是 `%APPDATA%\7DaysToDie\Saves`。工具只读扫描并备份，不会在启动时把存档复制到其他位置。
+游戏存档目录默认是 `%APPDATA%\7DaysToDie\Saves`，对应 `config.json` 的 `savesRoot`；可选的存档库目录对应 `saveLibraryRoot`，为空时不扫描。`saveLibraryRoot` 可以是普通 `Saves` 目录、单个版本的用户数据目录，或包含多个版本用户数据目录的父目录，工具会自动发现其中实际的 `<版本目录>\Saves`。工具会同时扫描游戏存档和存档库。从存档库启动存档时，会先把 C 盘已有的同名存档以时间戳名称复制回该存档实际所在的 `Saves`，再把选中存档复制到游戏存档目录，因此不会丢失原存档。
 
 ## 默认去重排除规则
 
@@ -214,8 +247,10 @@ crashes/**
 ## 项目结构
 
 ```text
-CMakeLists.txt            构建定义与三个测试目标
+CMakeLists.txt            构建定义与五个测试目标
 app.manifest              长路径 / DPI 清单
+installer/
+  SevenDaysManager.iss    Inno Setup 6 安装包脚本
 src/
   main.cpp                程序入口、日志转存
   MainWindow.*            主界面：版本表、存档表、启动流程
@@ -231,12 +266,13 @@ src/
     HardLink.*            硬链接创建、文件 ID、解除链接
     Deduper.*             去重计划/执行/校验/占用统计
     GameImporter.*        Steam 版本导入与元数据
-    SaveScanner.*         存档扫描与 main.ttw 版本解析
+    SaveScanner.*         存档扫描、存档根自动发现、main.ttw 版本解析、时间戳重命名
+    SaveInstaller.*       存档复制覆盖、失败回滚与取消保护
     GameLauncher.*        启动游戏与参数构造
     LogWatcher.*          启动日志解析
     BackupService.*       存档备份与保留策略
     TaskRunner.*          QtConcurrent 后台任务、进度与取消
-tests/                    核心、去重、日志三组测试
+tests/                    核心、去重、日志、后台任务、存档五组测试
 tools/
   metadata_search/        Assembly-CSharp.dll 字符串/元数据扫描工具
   ilspycmd.exe            ILSpy 命令行反编译工具
@@ -246,7 +282,10 @@ tools/
 
 - 核心引擎、硬链接去重、备份、存档版本解析、日志解析均已通过测试。
 - 自动加载已用真实 V1.4 游戏与 `Pregen10k1/MyGame` 存档实测通过。
+- 存档库双来源扫描、来源列、时间戳重命名、存档复制覆盖已通过单元测试与 GUI 控件验证。
+- 选择存档库父目录时自动识别多个 `<版本目录>\Saves`，已通过单元测试和隔离 `APPDATA` 的 GUI 端到端验证。
+- Release 构建与 Inno Setup 安装包已生成。
 - 尚未完成：
   - 在 GUI 中完整执行 20.8GB Steam 版本导入、指定基准、去重的端到端验证；
   - `-userdatafolder` 的真实游戏验证与界面接入；
-  - Release 打包与无 Qt 环境运行验证。
+  - 在未安装 Qt 的机器上执行安装包运行验证。
