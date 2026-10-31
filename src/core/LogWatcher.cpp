@@ -78,8 +78,9 @@ void LogWatcher::poll()
 void LogWatcher::processLine(const QString &line)
 {
     // 游戏日志行带有时间戳前缀，因此不能使用行首锚点。
+    // 兼容旧版本格式：A19 及更早版本日志写作 "Version: Alpha 19.6 (b8)"。
     static const QRegularExpression versionRe(
-        QStringLiteral(R"(Version:\s*(V\s*\d+\.\d+(?:\s*\(b\d+\))?))"),
+        QStringLiteral(R"(Version:\s*((?:V\s*|Alpha\s+)\d+\.\d+(?:\s*\(b\d+\))?))"),
         QRegularExpression::CaseInsensitiveOption);
     static const QRegularExpression userDataRe(
         QStringLiteral(R"(UserDataFolder:\s*(.+?)\s*$)"),
@@ -108,24 +109,30 @@ void LogWatcher::processLine(const QString &line)
 
     if (!m_gotAutoLoad) {
         const QString lower = line.toLower();
-        // 跳过启动参数回显，避免把 "-LoadSaveGame=" 本身误判为加载结果。
-        if (lower.contains(QStringLiteral("command line")))
-            return;
-
-        if (lower.contains(QStringLiteral("[loadsavegame]"))) {
-            // 结论行：游戏已决定继续现有存档，或已判定无法加载。
-            if (lower.contains(QStringLiteral("loading existing save game"))
-                || lower.contains(QStringLiteral("creating new save game"))) {
-                m_gotAutoLoad = true;
-                emit autoLoadResult(true, line);
-            } else if (lower.contains(QStringLiteral("does not exist"))
-                       || lower.contains(QStringLiteral("can not load archived"))
-                       || lower.contains(QStringLiteral("failed to automate"))) {
-                m_gotAutoLoad = true;
-                m_sawAutoLoadFailure = true;
-                emit autoLoadResult(false, line);
+        // 旧版本（如 A19）会把 -LoadSaveGame 当作未知配置项直接忽略。
+        if (lower.contains(QStringLiteral("loadsavegame"))
+            && lower.contains(QStringLiteral("not a configfile property"))) {
+            m_gotAutoLoad = true;
+            m_sawAutoLoadFailure = true;
+            emit autoLoadResult(
+                false, QStringLiteral("该游戏版本不支持 -LoadSaveGame，需在主菜单手动选择存档"));
+        } else if (!lower.contains(QStringLiteral("command line"))) {
+            // 跳过启动参数回显，避免把 "-LoadSaveGame=" 本身误判为加载结果。
+            if (lower.contains(QStringLiteral("[loadsavegame]"))) {
+                // 结论行：游戏已决定继续现有存档，或已判定无法加载。
+                if (lower.contains(QStringLiteral("loading existing save game"))
+                    || lower.contains(QStringLiteral("creating new save game"))) {
+                    m_gotAutoLoad = true;
+                    emit autoLoadResult(true, line);
+                } else if (lower.contains(QStringLiteral("does not exist"))
+                           || lower.contains(QStringLiteral("can not load archived"))
+                           || lower.contains(QStringLiteral("failed to automate"))) {
+                    m_gotAutoLoad = true;
+                    m_sawAutoLoadFailure = true;
+                    emit autoLoadResult(false, line);
+                }
+                // 其余行（如 Advanced to state、After restart）不是结论，继续等待。
             }
-            // 其余行（如 Advanced to state、After restart）不是结论，继续等待。
         }
     }
 }

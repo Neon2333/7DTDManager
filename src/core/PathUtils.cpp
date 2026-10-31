@@ -82,6 +82,19 @@ QString defaultSavesDir()
     return QDir::toNativeSeparators(appData) + QStringLiteral("\\7DaysToDie\\Saves");
 }
 
+QString resolveSavesRoot(const QString &path)
+{
+    const QString trimmed = path.trimmed();
+    if (trimmed.isEmpty())
+        return trimmed;
+
+    const QString clean = QDir::cleanPath(trimmed);
+    const QString nested = QDir(clean).filePath(QStringLiteral("Saves"));
+    if (QFileInfo(nested).isDir())
+        return QDir::cleanPath(nested);
+    return clean;
+}
+
 QString toWin32Path(const QString &path)
 {
     QString native = QDir::toNativeSeparators(path);

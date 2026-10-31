@@ -68,7 +68,8 @@ AppConfig AppConfig::load(QString *error)
 
     const QJsonObject object = document.object();
     config.versionRoot = readString(object, QStringLiteral("versionRoot"), config.versionRoot);
-    config.savesRoot = readString(object, QStringLiteral("savesRoot"), config.savesRoot);
+    config.savesRoot = PathUtils::resolveSavesRoot(
+        readString(object, QStringLiteral("savesRoot"), config.savesRoot));
     config.saveLibraryRoot =
         readString(object, QStringLiteral("saveLibraryRoot"), config.saveLibraryRoot);
     config.steamRoot = readString(object, QStringLiteral("steamRoot"), config.steamRoot);

@@ -22,7 +22,7 @@ public:
     bool isRunning() const { return m_timer.isActive(); }
 
 signals:
-    // 解析到 "Version: V x.y (bN)"。
+    // 解析到 "Version: V x.y (bN)" 或旧格式 "Version: Alpha x.y (bN)"。
     void versionDetected(const QString &version);
 
     // 解析到 "UserDataFolder: ..."。

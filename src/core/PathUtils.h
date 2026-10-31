@@ -11,6 +11,10 @@ QString appDataDir();
 // 默认游戏存档目录：%APPDATA%\7DaysToDie\Saves
 QString defaultSavesDir();
 
+// 把用户选择的目录归一化为游戏实际读取的存档根目录：
+// 若目录下存在 Saves 子目录（即选择的是游戏用户数据目录），返回该子目录；否则原样返回。
+QString resolveSavesRoot(const QString &path);
+
 // 为 Win32 API 添加 \\?\ 长路径前缀（不改变 Qt 使用的路径）。
 QString toWin32Path(const QString &path);
 

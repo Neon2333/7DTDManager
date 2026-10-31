@@ -81,6 +81,37 @@ int main(int argc, char *argv[])
 
     check(autoOk, QStringLiteral("识别自动加载成功（实际 %1）").arg(autoDetail));
 
+    // 合成 Alpha 旧版本日志：解析版本，并识别 A19 不支持 -LoadSaveGame 的警告。
+    const QString alphaLog = QDir(temp.path()).filePath(QStringLiteral("alpha.log"));
+    QFile alpha(alphaLog);
+    if (alpha.open(QIODevice::WriteOnly)) {
+        alpha.write("2026-10-31T21:38:00 0.078 INF Version: Alpha 19.6 (b8) "
+                    "Compatibility Version: Alpha 19.6, Build: Windows 64 Bit\n"
+                    "2026-10-31T21:38:00 6.170 WRN Command line argument 'LoadSaveGame' "
+                    "is not a configfile property, ignoring.\n");
+        alpha.close();
+    }
+
+    LogWatcher alphaWatcher;
+    QString alphaVersion;
+    bool alphaAutoOk = true;
+    QString alphaAutoDetail;
+    QObject::connect(&alphaWatcher, &LogWatcher::versionDetected,
+                     [&](const QString &version) { alphaVersion = version; });
+    QObject::connect(&alphaWatcher, &LogWatcher::autoLoadResult,
+                     [&](bool ok, const QString &detail) {
+                         alphaAutoOk = ok;
+                         alphaAutoDetail = detail;
+                     });
+    alphaWatcher.start(alphaLog, 3000);
+    QTimer::singleShot(1500, &app, &QCoreApplication::quit);
+    app.exec();
+
+    check(alphaVersion == QStringLiteral("Alpha 19.6 (b8)"),
+          QStringLiteral("解析旧版 Alpha 版本（实际 %1）").arg(alphaVersion));
+    check(!alphaAutoOk && alphaAutoDetail.contains(QStringLiteral("不支持")),
+          QStringLiteral("识别 -LoadSaveGame 不受支持（实际 %1）").arg(alphaAutoDetail));
+
     out << (failures == 0 ? "ALL PASS\n" : QStringLiteral("FAILURES=%1\n").arg(failures));
     return failures == 0 ? 0 : 1;
 }

@@ -1,7 +1,10 @@
+#include "core/PathUtils.h"
 #include "core/SaveScanner.h"
 #include "core/Version.h"
 
 #include <QCoreApplication>
+#include <QDir>
+#include <QTemporaryDir>
 #include <QTextStream>
 
 int main(int argc, char *argv[])
@@ -31,6 +34,16 @@ int main(int argc, char *argv[])
           QStringLiteral("标签规范化"));
     check(versionFolderName(QStringLiteral("1.4")) == QStringLiteral("7 Days To DieV1.4"),
           QStringLiteral("版本目录名生成"));
+
+    QTemporaryDir userData;
+    QDir(userData.path()).mkpath(QStringLiteral("Saves"));
+    check(PathUtils::resolveSavesRoot(userData.path())
+              == QDir::cleanPath(QDir(userData.path()).filePath(QStringLiteral("Saves"))),
+          QStringLiteral("用户数据目录归一化为 Saves 子目录"));
+    const QString plainDir = QDir(userData.path()).filePath(QStringLiteral("plain"));
+    QDir().mkpath(plainDir);
+    check(PathUtils::resolveSavesRoot(plainDir) == QDir::cleanPath(plainDir),
+          QStringLiteral("普通目录保持原样"));
 
     const QString savesRoot = SaveScanner::defaultSavesRoot();
     out << "savesRoot=" << savesRoot << "\n";

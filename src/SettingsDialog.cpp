@@ -118,7 +118,8 @@ QWidget *SettingsDialog::createPathRow(QLineEdit **editOut, const QString &dialo
 void SettingsDialog::accept()
 {
     const QString versionRoot = QDir::toNativeSeparators(m_versionRootEdit->text().trimmed());
-    const QString savesRoot = QDir::toNativeSeparators(m_savesRootEdit->text().trimmed());
+    const QString savesRoot = QDir::toNativeSeparators(
+        PathUtils::resolveSavesRoot(m_savesRootEdit->text().trimmed()));
     const QString saveLibraryRoot =
         QDir::toNativeSeparators(m_saveLibraryRootEdit->text().trimmed());
     const QString steamRoot = QDir::toNativeSeparators(m_steamRootEdit->text().trimmed());
